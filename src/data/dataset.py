@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from datasets import Dataset, load_dataset
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 
 
 @dataclass
@@ -30,6 +31,7 @@ def load_mbpp(
     version: str = "full",
     split: str = "train",
     max_samples: int | None = None,
+    local_path: str | None = None,
 ) -> list[CodeProblem]:
     """加载 MBPP 数据集.
 
@@ -37,11 +39,16 @@ def load_mbpp(
         version: "full" 或 "sanitized"
         split: "train" / "validation" / "test"
         max_samples: 限制样本数
+        local_path: 本地缓存路径（无外网环境使用）
 
     Returns:
         CodeProblem 列表
     """
-    ds = load_dataset("google-research-datasets/mbpp", version, split=split)
+    if local_path and os.path.exists(local_path):
+        ds_all = load_from_disk(local_path)
+        ds = ds_all[split] if isinstance(ds_all, DatasetDict) else ds_all
+    else:
+        ds = load_dataset("google-research-datasets/mbpp", version, split=split)
     if max_samples is not None:
         ds = ds.select(range(min(max_samples, len(ds))))
 
@@ -65,13 +72,22 @@ def load_mbpp(
 
 def load_humaneval(
     max_samples: int | None = None,
+    local_path: str | None = None,
 ) -> list[CodeProblem]:
     """加载 HumanEval 数据集.
+
+    Args:
+        max_samples: 限制样本数
+        local_path: 本地缓存路径（无外网环境使用）
 
     Returns:
         CodeProblem 列表
     """
-    ds = load_dataset("openai/openai_humaneval", split="test")
+    if local_path and os.path.exists(local_path):
+        ds_all = load_from_disk(local_path)
+        ds = ds_all["test"] if isinstance(ds_all, DatasetDict) else ds_all
+    else:
+        ds = load_dataset("openai/openai_humaneval", split="test")
     if max_samples is not None:
         ds = ds.select(range(min(max_samples, len(ds))))
 

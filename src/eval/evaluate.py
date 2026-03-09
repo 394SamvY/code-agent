@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -304,6 +305,8 @@ def main():
     parser.add_argument("--max_turns", type=int, default=5)
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument("--data_dir", type=str, default=None,
+                        help="本地数据集目录（无外网环境使用），内含 mbpp_full/ humaneval/ 子目录")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -320,12 +323,15 @@ def main():
         print(f"Evaluating on {ds_name} (mode={args.mode})")
         print(f"{'='*60}")
 
+        mbpp_local = os.path.join(args.data_dir, "mbpp_full") if args.data_dir else None
+        humaneval_local = os.path.join(args.data_dir, "humaneval") if args.data_dir else None
+
         if ds_name == "mbpp_test":
-            problems = load_mbpp(version="full", split="test", max_samples=args.max_samples)
+            problems = load_mbpp(version="full", split="test", max_samples=args.max_samples, local_path=mbpp_local)
         elif ds_name == "mbpp_val":
-            problems = load_mbpp(version="full", split="validation", max_samples=args.max_samples)
+            problems = load_mbpp(version="full", split="validation", max_samples=args.max_samples, local_path=mbpp_local)
         elif ds_name == "humaneval":
-            problems = load_humaneval(max_samples=args.max_samples)
+            problems = load_humaneval(max_samples=args.max_samples, local_path=humaneval_local)
         else:
             raise ValueError(f"Unknown dataset: {ds_name}")
 
