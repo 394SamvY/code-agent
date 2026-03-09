@@ -39,22 +39,6 @@ curl -s --max-time 10 www.baidu.com > /dev/null && echo "  网络OK" || { echo "
 
 mkdir -p $MODELS_DIR $DATASETS_DIR
 
-# ---- 1. 创建 conda 环境 ----
-echo ""
-echo "[1/3] 创建 conda 环境..."
-module load miniforge/25.3.0-3
-
-if conda env list | grep -q "code-agent"; then
-    echo "  conda 环境 code-agent 已存在，跳过创建"
-else
-    conda create -n code-agent python=3.11 -y
-fi
-
-source activate code-agent
-
-# 安装依赖（不要加 --user）
-echo "  安装 Python 依赖..."
-pip install -r $CODE_DIR/requirements.txt --only-binary=wandb
 
 # ---- 2. 下载模型 ----
 echo ""
