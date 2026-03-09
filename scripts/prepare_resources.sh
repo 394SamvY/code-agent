@@ -54,7 +54,7 @@ source activate code-agent
 
 # 安装依赖（不要加 --user）
 echo "  安装 Python 依赖..."
-pip install -r $CODE_DIR/requirements.txt
+pip install -r $CODE_DIR/requirements.txt --only-binary=wandb
 
 # ---- 2. 下载模型 ----
 echo ""
