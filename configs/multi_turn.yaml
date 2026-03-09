@@ -1,0 +1,49 @@
+# Phase 2: Multi-turn Agentic GRPO Training
+model:
+  name: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  # Optionally load Phase 1 checkpoint as starting point
+  resume_from: null
+
+data:
+  dataset: "mbpp_full"
+  split_train: "train"
+  split_val: "validation"
+  max_prompt_length: 1024
+  max_response_length: 2048
+  # 追加 APPS 数据集扩充训练数据（374 → ~4000+ 题）
+  use_apps: false
+  apps:
+    difficulty: "introductory"  # introductory / interview / competition
+    max_samples: 3000           # 控制总量，避免训练过慢
+
+grpo:
+  num_generations: 4
+  temperature: 0.7
+  beta: 0.04
+  learning_rate: 5.0e-6
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  num_train_epochs: 5
+  save_steps: 50
+  logging_steps: 5
+
+agent:
+  max_turns: 5
+  tools:
+    - write_code
+    - run_tests
+    - debug
+    - submit
+
+reward:
+  execution_timeout: 5
+  pass_reward: 1.0
+  fail_reward: 0.0
+  format_weight: 0.1         # format_reward 权重
+  behavioral_weight: 0.05    # behavioral_reward 每项权重，设为 0.0 可关闭（ablation）
+
+output_dir: "./outputs/multi_turn"
