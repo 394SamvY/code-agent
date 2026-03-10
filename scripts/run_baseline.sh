@@ -14,4 +14,5 @@ python -m src.eval.evaluate \
     --output_dir "$OUTPUT_DIR" \
     --mode baseline \
     --temperature 0.0 \
-    --max_new_tokens 512
+    --max_new_tokens 512 \
+    --data_dir ~/yangenhui/datasets
