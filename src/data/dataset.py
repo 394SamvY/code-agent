@@ -56,6 +56,10 @@ def load_mbpp(
     for row in ds:
         desc = row.get("text") or row.get("prompt", "")
         tests = row.get("test_list", [])
+        # 将第一个测试用例加入 prompt，让模型知道函数名和参数格式
+        # 参考 bigcode-evaluation-harness 的做法
+        if tests:
+            desc = f"{desc}\n{tests[0]}"
         problems.append(CodeProblem(
             task_id=f"mbpp/{row['task_id']}",
             prompt=desc,
