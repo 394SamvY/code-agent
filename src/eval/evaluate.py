@@ -140,6 +140,7 @@ def evaluate_multi_turn(
     max_new_tokens: int = 512,
     temperature: float = 0.7,
     timeout: int = 5,
+    few_shot: bool = False,
 ) -> dict:
     """Multi-turn 评估：Qwen 原生 tool calling 格式.
 
@@ -167,9 +168,10 @@ def evaluate_multi_turn(
             timeout=timeout,
         )
 
-        messages = build_agentic_messages(prob.prompt)
+        messages = build_agentic_messages(prob.prompt, few_shot=few_shot)
         num_turns = 0
         tool_sequence: list[str] = []
+        raw_responses: list[str] = []  # 保存模型原始输出
         first_write_tested = False  # 第一次 write+test 的结果
         first_test_passed = None
 
@@ -199,6 +201,7 @@ def evaluate_multi_turn(
 
             new_ids = outputs[0][input_ids.shape[1]:]
             response = tokenizer.decode(new_ids, skip_special_tokens=True)
+            raw_responses.append(response[:1000])  # 保存前 1000 字符用于诊断
             messages.append({"role": "assistant", "content": response})
             num_turns += 1
 
@@ -239,6 +242,7 @@ def evaluate_multi_turn(
             "num_turns": num_turns,
             "tool_sequence": tool_sequence,
             "first_test_passed": first_test_passed,
+            "raw_responses": raw_responses,
         })
 
         if (i + 1) % 10 == 0:
@@ -307,6 +311,8 @@ def main():
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--data_dir", type=str, default=None,
                         help="本地数据集目录（无外网环境使用），内含 mbpp_full/ humaneval/ 子目录")
+    parser.add_argument("--few_shot", action="store_true",
+                        help="multi_turn 模式下是否使用 few-shot 示例")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -343,6 +349,7 @@ def main():
                 max_turns=args.max_turns,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature or 0.7,
+                few_shot=args.few_shot,
             )
         else:
             result = evaluate_one_shot(

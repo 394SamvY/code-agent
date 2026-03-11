@@ -152,43 +152,63 @@ Write the solution function in Python:
 # Helper: build chat messages
 # ---------------------------------------------------------------------------
 
-def build_agentic_messages(problem_description: str) -> list[dict[str, str]]:
-    """构建 multi-turn agent 的初始 messages（含 few-shot 示例，不含 tools 注入）.
+SYSTEM_PROMPT_AGENTIC_PLAIN = (
+    "You are an expert Python programmer. You have exactly 4 tools: "
+    "write_code, run_tests, debug, submit. You MUST only use these tools.\n\n"
+    "Workflow:\n"
+    "1. Use write_code to save your complete Python function.\n"
+    "2. Use run_tests to check if all tests pass.\n"
+    "3. If tests fail, fix your code and use write_code again.\n"
+    "4. When all tests pass, use submit to finalize."
+)
+
+
+def build_agentic_messages(problem_description: str, few_shot: bool = False) -> list[dict[str, str]]:
+    """构建 multi-turn agent 的初始 messages（不含 tools 注入）.
+
+    Args:
+        problem_description: 题目描述
+        few_shot: 是否加入 few-shot 示例
 
     tools 注入由 tokenizer.apply_chat_template(messages, tools=TOOLS_SCHEMA)
     在编码时自动完成。
-
-    Few-shot 示例教模型两种关键流程：
-    1. write_code → run_tests → submit（一次通过）
-    2. write_code → run_tests(失败) → write_code(修复) → run_tests → submit（调试修复）
     """
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT_AGENTIC},
-        # ---- Few-shot 示例 1：一次通过 ----
-        {"role": "user", "content": _FEW_SHOT_USER_1},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_1A},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1B},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_1B},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1C},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_1C},
-        # ---- Few-shot 示例 2：调试修复 ----
-        {"role": "user", "content": _FEW_SHOT_USER_2},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_2A},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2B},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_2B},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2C},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_2C},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2D},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_2D},
-        {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2E},
-        {"role": "tool", "content": _FEW_SHOT_TOOL_2E},
-        # ---- 实际题目 ----
-        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-            problem_description=problem_description
-        )},
-    ]
+    if few_shot:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_AGENTIC},
+            # ---- Few-shot 示例 1：一次通过 ----
+            {"role": "user", "content": _FEW_SHOT_USER_1},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_1A},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1B},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_1B},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_1C},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_1C},
+            # ---- Few-shot 示例 2：调试修复 ----
+            {"role": "user", "content": _FEW_SHOT_USER_2},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_2A},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2B},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_2B},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2C},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_2C},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2D},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_2D},
+            {"role": "assistant", "content": _FEW_SHOT_ASSISTANT_2E},
+            {"role": "tool", "content": _FEW_SHOT_TOOL_2E},
+            # ---- 实际题目 ----
+            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                problem_description=problem_description
+            )},
+        ]
+    else:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_AGENTIC_PLAIN},
+            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                problem_description=problem_description
+            )},
+        ]
+    return messages
 
 
 def build_one_shot_prompt(problem_description: str) -> str:
