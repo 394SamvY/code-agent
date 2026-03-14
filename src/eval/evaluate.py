@@ -200,7 +200,8 @@ def evaluate_multi_turn(
                 outputs = model.generate(input_ids, **gen_kwargs)
 
             new_ids = outputs[0][input_ids.shape[1]:]
-            response = tokenizer.decode(new_ids, skip_special_tokens=True)
+            # multi-turn 模式保留特殊 token，确保解析器能识别原生 tool-call 标记。
+            response = tokenizer.decode(new_ids, skip_special_tokens=False)
             raw_responses.append(response[:1000])  # 保存前 1000 字符用于诊断
             messages.append({"role": "assistant", "content": response})
             num_turns += 1
@@ -315,7 +316,8 @@ def main():
                         help="multi_turn 模式下是否使用 few-shot 示例")
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir)
+    # 使用绝对路径，避免运行过程中工作目录变化导致相对路径失效
+    output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading model: {args.model}")
@@ -378,6 +380,7 @@ def main():
                 print(f"    {pattern}: {count}")
 
         detail_path = output_dir / f"{ds_name}_{args.mode}_details.json"
+        detail_path.parent.mkdir(parents=True, exist_ok=True)
         with open(detail_path, "w") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
 
@@ -388,6 +391,7 @@ def main():
         print(f"  {ds_name}: pass@1 = {r['pass@1']:.4f} ({r['passed']}/{r['total']})")
 
     summary_path = output_dir / f"summary_{args.mode}.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as f:
         json.dump({
             "model": args.model,

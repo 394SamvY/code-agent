@@ -4,8 +4,6 @@ __pycache__/
 *.egg-info/
 .venv/
 
-# Training outputs
-outputs/
 
 # IDE
 .idea/

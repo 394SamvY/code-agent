@@ -1,0 +1,37 @@
+{
+  "model": "/root/autodl-tmp/models/Qwen2.5-Coder-7B-Instruct",
+  "lora_path": null,
+  "mode": "multi_turn",
+  "results": {
+    "mbpp_test": {
+      "pass@1": 0.236,
+      "passed": 118,
+      "total": 500,
+      "agentic_metrics": {
+        "avg_turns": 2.99,
+        "fix_rate": 0.0798,
+        "fix_count": 17,
+        "first_attempt_correct": 101,
+        "tested_problems": 314,
+        "tool_distribution": {
+          "run_tests": 883,
+          "write_code": 232,
+          "submit": 135,
+          "debug": 25
+        },
+        "top_workflow_patterns": {
+          "(no tools)": 183,
+          "run_tests -> run_tests -> run_tests -> run_tests -> run_tests": 104,
+          "write_code -> run_tests -> submit": 101,
+          "write_code -> run_tests -> debug -> write_code -> run_tests": 17,
+          "run_tests -> write_code -> run_tests -> submit": 13,
+          "write_code -> run_tests -> write_code -> run_tests -> write_code": 12,
+          "run_tests -> run_tests -> run_tests -> run_tests": 10,
+          "run_tests -> run_tests -> run_tests -> submit": 10,
+          "run_tests": 7,
+          "run_tests -> run_tests -> run_tests": 7
+        }
+      }
+    }
+  }
+}
