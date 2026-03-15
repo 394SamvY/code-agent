@@ -1,0 +1,77 @@
+# Agentic GRPO Training — Qwen2.5-Coder-7B-Instruct
+#
+# 目标: 训练模型学会 write_code → run_tests → (fix) → submit 的工具调用循环
+# 框架: verl + SGLang multi-turn rollout + FSDP
+# 硬件建议: 2-4x A100 (40G/80G)
+
+data:
+  train_files: ./data/verl/train.parquet
+  val_files: ./data/verl/val.parquet
+  train_batch_size: 128
+  return_raw_chat: true
+  chat_template_kwargs:
+    add_generation_prompt: true
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen2.5-Coder-7B-Instruct
+  actor:
+    ppo_micro_batch_size_per_gpu: 2
+    ppo_mini_batch_size: 32
+    use_kl_loss: true
+    kl_loss_coef: 0.01
+    kl_loss_type: low_var_kl
+    entropy_coeff: 0.001
+    grad_clip: 1.0
+    optim:
+      lr: 5.0e-6
+      weight_decay: 0.01
+      warmup_ratio: 0.05
+    peft:
+      peft_type: lora
+      lora_rank: 16
+      lora_alpha: 32
+      target_modules:
+        - q_proj
+        - k_proj
+        - v_proj
+        - o_proj
+    gradient_checkpointing: true
+    fsdp:
+      enable: true
+  ref:
+    fsdp:
+      enable: true
+  rollout:
+    name: sglang
+    gpu_memory_utilization: 0.5
+    tensor_model_parallel_size: 1
+    # 多轮配置
+    multi_turn:
+      enable: true
+      tokenization_sanity_check_mode: ignore_strippable
+    # 工具配置
+    tool_kwargs:
+      tools_config_file: configs/verl/tool_config.yaml
+    # 生成参数
+    temperature: 0.9
+    top_p: 0.95
+    max_new_tokens: 512
+    # GRPO 采样
+    n: 8
+
+algorithm:
+  adv_estimator: grpo
+
+trainer:
+  total_epochs: 10
+  save_freq: 50
+  test_freq: 100
+  project_name: code-agent-grpo
+  experiment_name: qwen7b-agentic-grpo
+  logger:
+    - wandb
+  rollout_data_dir: ./outputs/verl_grpo/rollout_data
+
+# 多轮限制
+max_turns: 10

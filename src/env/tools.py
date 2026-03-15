@@ -2,11 +2,11 @@
 Agent 工具集定义
 ====================================
 
-4 种核心工具：write_code / run_tests / debug / submit
-覆盖完整的 写代码 → 测试 → 调试 → 提交 工作流。
+3 种核心工具：write_code / run_tests / submit
+覆盖完整的 写代码 → 测试 → 提交 工作流。
 
 设计原则：
-- 少而精，降低小模型的决策空间
+- 少而精，降低模型的决策空间
 - 每个工具返回丰富信息，减少不必要的交互轮数
 - write_code 内置语法检查，run_tests 内置完整 traceback
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .sandbox import execute_code, execute_with_tests
+from .sandbox import execute_with_tests
 
 # ---------------------------------------------------------------------------
 # TOOLS_SCHEMA: OpenAI function calling 格式，供 Qwen apply_chat_template 使用
@@ -31,8 +31,8 @@ from .sandbox import execute_code, execute_with_tests
 #   "function.description"        — 功能描述，模型据此判断何时使用该工具
 #   "function.parameters"         — 遵循 JSON Schema 规范，定义参数类型和约束
 #
-# 设计上只保留 4 个工具（write_code / run_tests / debug / submit），
-# 覆盖 "写码 → 测试 → 调试 → 提交" 的完整循环，降低小模型的决策复杂度。
+# 只保留 3 个工具（write_code / run_tests / submit），
+# 覆盖 "写码 → 测试 → 提交" 的核心循环，最小化决策空间。
 TOOLS_SCHEMA = [
     # ---- write_code ----
     # 将完整代码存入 env_state["current_code"]（纯内存操作，不涉及文件路径）。
@@ -76,29 +76,6 @@ TOOLS_SCHEMA = [
             },
         },
     },
-    # ---- debug ----
-    # 将当前代码 + 模型提供的调试片段拼接后在 sandbox 中执行，
-    # 模型可以通过 print() 来检查中间变量，方便定位 bug。
-    {
-        "type": "function",
-        "function": {
-            "name": "debug",
-            "description": (
-                "Execute a code snippet for debugging. "
-                "The current solution is available in scope. Use print() to inspect variables."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Python code with print() calls for debugging.",
-                    }
-                },
-                "required": ["code"],
-            },
-        },
-    },
     # ---- submit ----
     # 无参数。提交当前代码作为最终答案，会重新跑一遍全部测试来判定通过与否。
     # 调用后 env_state["submitted"] 置为 True，episode 结束。
@@ -127,7 +104,7 @@ TOOLS_SCHEMA = [
 
 def tool_write_code(env_state: dict[str, Any], code: str) -> str:
     """写入代码并自动检查语法。"""
-    # 全量替换内存中的代码（不写磁盘），只有 run_tests/debug 时才会写临时文件执行
+    # 全量替换内存中的代码（不写磁盘），只有 run_tests 时才会写临时文件执行
     env_state["current_code"] = code
     env_state["last_traceback"] = ""
 
@@ -171,7 +148,10 @@ def tool_run_tests(env_state: dict[str, Any]) -> str:
             )
             env_state["last_traceback"] = result.stderr
 
-    # 汇总结果：通过/失败数 + 失败详情（含 traceback），给模型足够的调试信息
+    # 记录本次测试结果（供 reward 计算使用）
+    if "test_results_history" in env_state:
+        env_state["test_results_history"].append({"passed": passed, "total": len(test_list)})
+
     summary = f"{passed} passed, {failed} failed out of {len(test_list)} tests."
     if failure_details:
         summary += "\n\nFailure details:\n" + "\n---\n".join(failure_details)
@@ -180,48 +160,35 @@ def tool_run_tests(env_state: dict[str, Any]) -> str:
     return summary
 
 
-def tool_debug(env_state: dict[str, Any], code: str) -> str:
-    """在当前代码作用域中执行调试代码片段。"""
-    current = env_state.get("current_code", "")
-    # 将当前代码 + 调试片段拼接，这样调试代码可以直接调用已定义的函数/变量
-    full_code = f"{current}\n\n{code}"
-    result = execute_code(full_code, timeout=env_state.get("timeout", 5))
-    if result.timed_out:
-        return "Debug execution timed out."
-    output = result.stdout.strip()
-    if result.returncode != 0:
-        err_last = result.stderr.strip().split("\n")[-1] if result.stderr else ""
-        if output:
-            return f"Debug output:\n{output}\nError: {err_last}"
-        return f"Error: {err_last}"
-    return f"Debug output:\n{output}" if output else "(no output)"
-
-
 def tool_submit(env_state: dict[str, Any]) -> str:
     """提交最终答案，结束 episode。"""
     code = env_state.get("current_code", "")
     if not code.strip():
         env_state["submitted"] = True
         env_state["submit_passed"] = False
+        env_state["submit_pass_ratio"] = 0.0
         return "Submission failed: No code written."
 
-    # 重新跑一遍全部测试来做最终判定（不复用之前 run_tests 的结果，防止代码被改过）
+    # 重新跑一遍全部测试来做最终判定（逐条计数以获得 pass_ratio）
     test_list: list[str] = env_state.get("test_list", [])
-    all_passed = True
+    passed = 0
     for test in test_list:
         result = execute_with_tests(
             code, test, timeout=env_state.get("timeout", 5)
         )
-        if not result.success:
-            all_passed = False
-            break  # 快速失败，不需要继续跑剩余测试
+        if result.success:
+            passed += 1
 
-    # 标记 episode 结束，外层 rollout 循环会据此终止
+    total = len(test_list) if test_list else 1
+    all_passed = passed == total and total > 0
+
     env_state["submitted"] = True
     env_state["submit_passed"] = all_passed
+    env_state["submit_pass_ratio"] = passed / total if total > 0 else 0.0
+
     if all_passed:
         return "Accepted! All tests passed."
-    return "Submission failed: Not all tests passed."
+    return f"Submission failed: {passed}/{total} tests passed."
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +201,40 @@ def tool_submit(env_state: dict[str, Any]) -> str:
 TOOL_EXECUTORS: dict[str, Callable] = {
     "write_code": tool_write_code,
     "run_tests": tool_run_tests,
-    "debug": tool_debug,
     "submit": tool_submit,
 }
+
+
+# ---------------------------------------------------------------------------
+# 工具名 → verl BaseTool 类路径 的映射（用于生成 tool_config.yaml）
+# ---------------------------------------------------------------------------
+
+_TOOL_NAME_TO_VERL_CLASS: dict[str, str] = {
+    "write_code": "src.verl_tools.write_code_tool.WriteCodeTool",
+    "run_tests": "src.verl_tools.run_tests_tool.RunTestsTool",
+    "submit": "src.verl_tools.submit_tool.SubmitTool",
+}
+
+
+def generate_tool_config_yaml() -> str:
+    """从 TOOLS_SCHEMA 自动生成 verl 的 tool_config.yaml 内容。"""
+    import yaml
+
+    tools = []
+    for schema in TOOLS_SCHEMA:
+        name = schema["function"]["name"]
+        tools.append({
+            "class_name": _TOOL_NAME_TO_VERL_CLASS[name],
+            "config": {"type": "native"},
+            "tool_schema": schema,
+        })
+    return yaml.dump({"tools": tools}, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    output = Path(__file__).resolve().parents[2] / "configs" / "verl" / "tool_config.yaml"
+    content = generate_tool_config_yaml()
+    output.write_text(content)
+    print(f"Generated {output}")

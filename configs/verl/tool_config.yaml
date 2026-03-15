@@ -1,0 +1,44 @@
+tools:
+- class_name: src.verl_tools.write_code_tool.WriteCodeTool
+  config:
+    type: native
+  tool_schema:
+    type: function
+    function:
+      name: write_code
+      description: Write or replace the current solution code. Automatically checks
+        syntax and reports errors.
+      parameters:
+        type: object
+        properties:
+          code:
+            type: string
+            description: The complete Python function code.
+        required:
+        - code
+- class_name: src.verl_tools.run_tests_tool.RunTestsTool
+  config:
+    type: native
+  tool_schema:
+    type: function
+    function:
+      name: run_tests
+      description: Run all test cases against the current code. Returns pass/fail
+        count with detailed error messages and traceback.
+      parameters:
+        type: object
+        properties: {}
+        required: []
+- class_name: src.verl_tools.submit_tool.SubmitTool
+  config:
+    type: native
+  tool_schema:
+    type: function
+    function:
+      name: submit
+      description: Submit the current code as the final answer. This ends the episode.
+        Make sure all tests pass before submitting.
+      parameters:
+        type: object
+        properties: {}
+        required: []
