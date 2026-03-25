@@ -232,8 +232,7 @@ def evaluate_multi_turn(
             )
 
             if i == 0 and _turn == 0:
-                print(f"\n[DEBUG] prompt (first 800 chars):\n{prompt[:800]}")
-                print(f"[DEBUG] prompt (last 200 chars):\n{prompt[-200:]}")
+                print(f"\n[DEBUG] full prompt:\n{prompt}")
 
             response = client.completions.create(
                 model="default",
@@ -250,7 +249,7 @@ def evaluate_multi_turn(
 
             if i == 0:
                 print(f"[DEBUG] turn={_turn+1}, tool_call={'yes' if tool_call else 'no'}")
-                print(f"[DEBUG] raw output[:300]={assistant_text[:300]}")
+                print(f"[DEBUG] raw output:\n{assistant_text}")
                 if tool_call:
                     print(f"[DEBUG] parsed tool_call={tool_call['name']}, args_len={len(json.dumps(tool_call['arguments']))}")
 
@@ -293,10 +292,10 @@ def evaluate_multi_turn(
             "num_turns": num_turns,
             "num_executions": len(env.test_results_history),
             "first_test_passed": first_test_passed,
-            "final_code": env.current_code[:2000],
+            "final_code": env.current_code,
             "test_results_history": env.test_results_history,
             "messages": [
-                {"role": m["role"], "content": m.get("content", "")[:2000]}
+                {"role": m["role"], "content": m.get("content", "")}
                 for m in messages
             ],
         })
