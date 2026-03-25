@@ -162,9 +162,7 @@ def evaluate_multi_turn(
 
     除 pass@1 外，还收集 agentic 专属指标：
     - avg_turns: 平均交互轮数
-    - fix_rate: 修复率（初始代码错误但最终通过的比例）
-    - tool_distribution: 工具调用频次分布
-    - workflow_patterns: 工具调用序列模式统计
+    - fix_rate: 修复率（首次失败但最终通过的比例）
     """
     from openai import OpenAI
 
@@ -175,7 +173,6 @@ def evaluate_multi_turn(
     results: list[dict] = []
 
     all_turn_counts: list[int] = []
-    all_tool_sequences: list[list[str]] = []
     fix_count = 0
     first_attempt_correct = 0
 
@@ -189,7 +186,6 @@ def evaluate_multi_turn(
 
         messages = build_agentic_messages(prob.prompt)
         num_turns = 0
-        tool_sequence: list[str] = []
         first_test_passed = None
 
         for _turn in range(max_turns):
@@ -227,7 +223,6 @@ def evaluate_multi_turn(
             except json.JSONDecodeError:
                 tool_args = {}
 
-            tool_sequence.append(tool_name)
             observation = env.execute_tool(tool_name, **tool_args)
             messages.append({
                 "role": "tool",
@@ -235,16 +230,11 @@ def evaluate_multi_turn(
                 "content": observation,
             })
 
-            if tool_name == "run_tests" and first_test_passed is None:
+            # 追踪首次测试结果（用于 fix_rate 计算）
+            if first_test_passed is None and "tests passed" in observation:
                 first_test_passed = "All tests passed" in observation
 
-            if tool_name == "submit" or env.is_done:
-                break
-
-        if not env.is_done:
-            env.execute_tool("submit")
-
-        is_correct = env.final_reward > 0.5
+        is_correct = env.is_all_passed
         if is_correct:
             passed += 1
 
@@ -254,13 +244,12 @@ def evaluate_multi_turn(
             first_attempt_correct += 1
 
         all_turn_counts.append(num_turns)
-        all_tool_sequences.append(tool_sequence)
 
         results.append({
             "task_id": prob.task_id,
             "passed": is_correct,
             "num_turns": num_turns,
-            "tool_sequence": tool_sequence,
+            "num_executions": len(env.test_results_history),
             "first_test_passed": first_test_passed,
         })
 
@@ -269,27 +258,15 @@ def evaluate_multi_turn(
 
     avg_turns = sum(all_turn_counts) / total if total > 0 else 0.0
 
-    tool_counter: Counter = Counter()
-    for seq in all_tool_sequences:
-        tool_counter.update(seq)
-
-    pattern_counter: Counter = Counter()
-    for seq in all_tool_sequences:
-        pattern = " -> ".join(seq) if seq else "(no tools)"
-        pattern_counter[pattern] += 1
-
     failed_first = sum(1 for r in results if r["first_test_passed"] is False)
-    tested_count = sum(1 for r in results if r["first_test_passed"] is not None)
     fix_rate = fix_count / failed_first if failed_first > 0 else 0.0
 
     agentic_metrics = {
         "avg_turns": round(avg_turns, 2),
+        "avg_executions": round(sum(r["num_executions"] for r in results) / total, 2) if total > 0 else 0.0,
         "fix_rate": round(fix_rate, 4),
         "fix_count": fix_count,
         "first_attempt_correct": first_attempt_correct,
-        "tested_problems": tested_count,
-        "tool_distribution": dict(tool_counter.most_common()),
-        "top_workflow_patterns": dict(pattern_counter.most_common(10)),
     }
 
     return {
@@ -390,12 +367,8 @@ def main():
 
         if "agentic_metrics" in result:
             am = result["agentic_metrics"]
-            print(f"  avg_turns = {am['avg_turns']}, fix_rate = {am['fix_rate']:.4f} "
-                  f"({am['fix_count']} fixes / {am['fix_count'] + am['first_attempt_correct']} tested)")
-            print(f"  tool_distribution: {am['tool_distribution']}")
-            top_patterns = list(am["top_workflow_patterns"].items())[:5]
-            for pattern, count in top_patterns:
-                print(f"    {pattern}: {count}")
+            print(f"  avg_turns = {am['avg_turns']}, avg_executions = {am['avg_executions']}")
+            print(f"  fix_rate = {am['fix_rate']:.4f} ({am['fix_count']} fixes)")
 
         detail_path = output_dir / f"{ds_name}_{args.mode}_details.json"
         detail_path.parent.mkdir(parents=True, exist_ok=True)

@@ -39,9 +39,6 @@ class CodeEnvironment:
             "current_code": "",
             "test_list": test_list,
             "last_traceback": "",
-            "submitted": False,
-            "submit_passed": False,
-            "submit_pass_ratio": 0.0,
             "timeout": timeout,
             "tool_history": [],
             "test_results_history": [],
@@ -74,24 +71,8 @@ class CodeEnvironment:
             return f"Error calling {tool_name}: {e}"
 
     @property
-    def is_done(self) -> bool:
-        """episode 是否已结束（已 submit）."""
-        return self._state["submitted"]
-
-    @property
-    def final_reward(self) -> float:
-        """最终 reward：submit 且全部通过 = 1.0，否则 = 0.0."""
-        if not self._state["submitted"]:
-            return 0.0
-        return 1.0 if self._state["submit_passed"] else 0.0
-
-    @property
     def current_code(self) -> str:
         return self._state["current_code"]
-
-    @property
-    def submit_pass_ratio(self) -> float:
-        return self._state.get("submit_pass_ratio", 0.0)
 
     @property
     def tool_history(self) -> list[str]:
@@ -102,15 +83,24 @@ class CodeEnvironment:
         return self._state["test_results_history"]
 
     @property
-    def submit_passed(self) -> bool:
-        return self._state["submit_passed"]
+    def is_all_passed(self) -> bool:
+        """最近一次测试是否全部通过。"""
+        if not self._state["test_results_history"]:
+            return False
+        last = self._state["test_results_history"][-1]
+        return last["passed"] == last["total"] and last["total"] > 0
+
+    @property
+    def last_pass_ratio(self) -> float:
+        """最近一次测试的通过率。"""
+        if not self._state["test_results_history"]:
+            return 0.0
+        last = self._state["test_results_history"][-1]
+        return last["passed"] / last["total"] if last["total"] > 0 else 0.0
 
     def reset(self) -> None:
         """重置环境状态，复用同一道题."""
         self._state["current_code"] = ""
         self._state["last_traceback"] = ""
-        self._state["submitted"] = False
-        self._state["submit_passed"] = False
-        self._state["submit_pass_ratio"] = 0.0
         self._state["tool_history"] = []
         self._state["test_results_history"] = []

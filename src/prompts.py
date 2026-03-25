@@ -31,20 +31,21 @@ Write the solution function in Python:
 
 
 SYSTEM_PROMPT_AGENTIC_PLAIN = (
-    "You are an expert Python programmer. You have exactly 3 tools: "
-    "write_code, run_tests, submit. You MUST only use these tools.\n\n"
+    "You are an expert Python programmer. You have a tool called execute_code "
+    "that takes your complete Python function code, runs all test cases, and "
+    "returns the results with pass/fail counts and error details.\n\n"
     "Workflow:\n"
-    "1. Use write_code to save your complete Python function.\n"
-    "2. Use run_tests to check if all tests pass.\n"
-    "3. If tests fail, fix your code and use write_code again, then run_tests.\n"
-    "4. When all tests pass, use submit to finalize."
+    "1. Write your solution and call execute_code to test it.\n"
+    "2. If any tests fail, read the error messages carefully, fix your code, "
+    "and call execute_code again.\n"
+    "3. Repeat until all tests pass."
 )
 
 USER_PROMPT_TEMPLATE = (
     "Solve the following Python programming problem:\n\n"
     "{problem_description}\n\n"
     "Write a Python function that satisfies the above requirements. "
-    "Start by writing your solution with write_code, then test it."
+    "Use execute_code to test your solution."
 )
 
 

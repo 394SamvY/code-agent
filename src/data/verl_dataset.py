@@ -5,8 +5,15 @@ verl 数据格式转换
 将 CodeProblem 列表转换为 verl RLHFDataset 所需的 parquet 格式。
 
 verl 的数据集要求每条记录包含:
-- prompt: chat messages 列表 (JSON 序列化字符串)
-- 其余字段作为 extra columns, 会通过 non_tensor_batch 传给 tool.create()
+- prompt: chat messages 列表（直接存 list，不是 JSON 字符串）
+- agent_name: "tool_agent"（verl 用它路由到 ToolAgentLoop）
+- data_source: 数据来源标识
+- extra_info: 包含 tools_kwargs，verl 通过它把参数传给 tool.create()
+
+数据流:
+  parquet extra_info.tools_kwargs.execute_code.create_kwargs
+    → verl _call_tool()
+    → tool.create(create_kwargs={"test_list": [...], "entry_point": "..."})
 """
 
 from __future__ import annotations
@@ -21,18 +28,36 @@ from src.data.dataset import CodeProblem, load_mbpp, load_humaneval, load_apps
 
 
 def problem_to_verl_record(problem: CodeProblem) -> dict:
-    """将单个 CodeProblem 转换为 verl 训练记录。"""
+    """将单个 CodeProblem 转换为 verl 训练记录。
+
+    对齐 verl 官方 GSM8K tool agent 示例的数据格式：
+    - prompt: list[dict]（不是 JSON 字符串）
+    - agent_name: "tool_agent"
+    - extra_info.tools_kwargs: 按工具名组织的 create_kwargs
+    """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT_AGENTIC_PLAIN},
         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
             problem_description=problem.prompt
         )},
     ]
+
     return {
-        "prompt": json.dumps(messages, ensure_ascii=False),
-        "task_id": problem.task_id,
-        "test_list": json.dumps(problem.test_list, ensure_ascii=False),
-        "entry_point": problem.entry_point,
+        "data_source": f"code_agent/{problem.task_id.split('/')[0]}",
+        "agent_name": "tool_agent",
+        "prompt": messages,
+        "extra_info": {
+            "task_id": problem.task_id,
+            "need_tools_kwargs": True,
+            "tools_kwargs": {
+                "execute_code": {
+                    "create_kwargs": {
+                        "test_list": problem.test_list,
+                        "entry_point": problem.entry_point,
+                    },
+                },
+            },
+        },
     }
 
 
@@ -52,7 +77,7 @@ def problems_to_verl_parquet(
 
 def prepare_verl_datasets(
     output_dir: str = "./data/verl",
-    use_apps: bool = False,
+    use_apps: bool = True,
     apps_difficulty: str = "introductory",
     apps_max_samples: int = 3000,
 ) -> dict[str, Path]:
