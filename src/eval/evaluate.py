@@ -4,7 +4,7 @@
 
 支持三种评估模式：
 1. one_shot: 模型一次性生成代码（本地 HuggingFace）
-2. multi_turn: 模型多轮与环境交互（通过 SGLang OpenAI API，与训练完全一致）
+2. multi_turn: 模型多轮与环境交互（通过 SGLang completions API + 手动 chat template 注入 tools）
 3. baseline: 等同于 one_shot（裸模型，不加载 LoRA）
 
 在 MBPP test 和 HumanEval 上评估 pass@1。
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,84 @@ from src.env.sandbox import execute_with_tests
 from src.env.tools import TOOLS_SCHEMA
 
 
+def _parse_tool_call(text: str) -> tuple[str, dict | None]:
+    """从模型输出中解析工具调用，按优先级尝试多种格式.
+
+    支持格式（优先级从高到低）：
+    1. <tool_call>{"name": ..., "arguments": ...}</tool_call>  （Qwen 标准格式）
+    2. 裸 JSON 或代码块中的 {"name": "execute_code", ...}    （含 pretty-printed）
+
+    使用括号匹配而非正则来提取 JSON，正确处理嵌套 {} 和字符串内的 } 字符。
+
+    Returns:
+        (content, tool_call): content 是工具调用之前的文本,
+        tool_call 是 {"name": ..., "arguments": {...}} 或 None.
+    """
+    # 格式 1: <tool_call>...</tool_call> 标准 Qwen 格式
+    match = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
+    if match:
+        content = text[: match.start()].strip()
+        parsed = _try_parse_tool_json(match.group(1))
+        if parsed:
+            return content, parsed
+
+    # 格式 2: 查找 {"name": "execute_code" 开头的 JSON 对象（支持 pretty-print）
+    for m in re.finditer(r'\{\s*"name"\s*:\s*"execute_code"', text):
+        json_str = _extract_json_object(text, m.start())
+        if json_str:
+            parsed = _try_parse_tool_json(json_str)
+            if parsed:
+                content = text[: m.start()].rstrip()
+                # 去除尾部残余的 ```json 等代码块标记
+                content = re.sub(r"```(?:json|xml)?\s*$", "", content).rstrip()
+                return content, parsed
+
+    return text, None
+
+
+def _extract_json_object(text: str, start: int) -> str | None:
+    """从 start 位置开始提取完整的 JSON 对象，正确处理嵌套和字符串。"""
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape_next = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _try_parse_tool_json(raw: str) -> dict | None:
+    """尝试将 JSON 字符串解析为 {"name": ..., "arguments": {...}}."""
+    try:
+        data = json.loads(raw)
+        name = data.get("name", "")
+        arguments = data.get("arguments", {})
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments)
+        if name and isinstance(arguments, dict):
+            return {"name": name, "arguments": arguments}
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    return None
+
+
 def extract_code_from_completion(text: str) -> str:
     """从 one-shot completion 中提取代码.
 
@@ -44,8 +123,6 @@ def extract_code_from_completion(text: str) -> str:
     1. 优先匹配 ```python ... ``` 代码块
     2. fallback：返回整段文本
     """
-    import re
-
     pattern = re.compile(r"```python\s*\n?(.*?)```", re.DOTALL)
     match = pattern.search(text)
     if match:
@@ -152,13 +229,21 @@ def evaluate_one_shot(
 
 def evaluate_multi_turn(
     sglang_url: str,
+    model_path: str,
     problems: list[CodeProblem],
     max_turns: int = 5,
     max_new_tokens: int = 512,
     temperature: float = 0.7,
     timeout: int = 5,
+    output_path: str | None = None,
 ) -> dict:
-    """Multi-turn 评估：通过 SGLang OpenAI 兼容 API，与训练使用相同的推理+解析栈。
+    """Multi-turn 评估：通过 SGLang completions API + 手动 apply_chat_template 注入 tools.
+
+    绕开 SGLang chat completions 的 tools 处理（其 --tool-call-parser qwen 未正确
+    注入 Qwen 格式的 tools 描述），改为：
+    1. 用 tokenizer.apply_chat_template(messages, tools=TOOLS_SCHEMA) 构建完整 prompt
+    2. 用 /v1/completions 端点做原始文本补全
+    3. 手动解析 <tool_call> 标签
 
     除 pass@1 外，还收集 agentic 专属指标：
     - avg_turns: 平均交互轮数
@@ -167,6 +252,7 @@ def evaluate_multi_turn(
     from openai import OpenAI
 
     client = OpenAI(base_url=sglang_url, api_key="EMPTY")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     passed = 0
     total = len(problems)
@@ -189,50 +275,57 @@ def evaluate_multi_turn(
         first_test_passed = None
 
         for _turn in range(max_turns):
-            response = client.chat.completions.create(
-                model="default",
-                messages=messages,
+            prompt = tokenizer.apply_chat_template(
+                messages,
                 tools=TOOLS_SCHEMA,
-                max_tokens=max_new_tokens,
-                temperature=temperature,
+                tokenize=False,
+                add_generation_prompt=True,
             )
 
-            choice = response.choices[0]
-            assistant_msg = choice.message
+            if i == 0 and _turn == 0:
+                print(f"\n[DEBUG] prompt (first 800 chars):\n{prompt[:800]}")
+                print(f"[DEBUG] prompt (last 200 chars):\n{prompt[-200:]}")
+
+            response = client.completions.create(
+                model="default",
+                prompt=prompt,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                stop=["<|im_end|>", "<|endoftext|>"],
+            )
+
+            assistant_text = response.choices[0].text
             num_turns += 1
 
-            msg_dict: dict = {"role": "assistant", "content": assistant_msg.content or ""}
-            if assistant_msg.tool_calls:
-                msg_dict["tool_calls"] = [
-                    {
-                        "id": tc.id,
+            content, tool_call = _parse_tool_call(assistant_text)
+
+            if i == 0:
+                print(f"[DEBUG] turn={_turn+1}, tool_call={'yes' if tool_call else 'no'}")
+                print(f"[DEBUG] raw output[:300]={assistant_text[:300]}")
+                if tool_call:
+                    print(f"[DEBUG] parsed tool_call={tool_call['name']}, args_len={len(json.dumps(tool_call['arguments']))}")
+
+            if tool_call:
+                messages.append({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
                         "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in assistant_msg.tool_calls
-                ]
-            messages.append(msg_dict)
+                        "function": {
+                            "name": tool_call["name"],
+                            "arguments": json.dumps(tool_call["arguments"]),
+                        },
+                    }],
+                })
 
-            if not assistant_msg.tool_calls:
+                observation = env.execute_tool(tool_call["name"], **tool_call["arguments"])
+                messages.append({"role": "tool", "content": observation})
+
+                if first_test_passed is None and "tests passed" in observation:
+                    first_test_passed = "All tests passed" in observation
+            else:
+                messages.append({"role": "assistant", "content": assistant_text})
                 break
-
-            tc = assistant_msg.tool_calls[0]
-            tool_name = tc.function.name
-            try:
-                tool_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                tool_args = {}
-
-            observation = env.execute_tool(tool_name, **tool_args)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": observation,
-            })
-
-            # 追踪首次测试结果（用于 fix_rate 计算）
-            if first_test_passed is None and "tests passed" in observation:
-                first_test_passed = "All tests passed" in observation
 
         is_correct = env.is_all_passed
         if is_correct:
@@ -251,7 +344,17 @@ def evaluate_multi_turn(
             "num_turns": num_turns,
             "num_executions": len(env.test_results_history),
             "first_test_passed": first_test_passed,
+            "final_code": env.current_code[:2000],
+            "test_results_history": env.test_results_history,
+            "messages": [
+                {"role": m["role"], "content": m.get("content", "")[:2000]}
+                for m in messages
+            ],
         })
+
+        if output_path:
+            with open(output_path, "w") as f:
+                json.dump({"results": results, "progress": f"{i+1}/{total}"}, f, indent=2, ensure_ascii=False)
 
         if (i + 1) % 10 == 0:
             print(f"  [{i+1}/{total}] pass@1 so far: {passed}/{i+1} = {passed/(i+1):.3f}")
@@ -310,7 +413,6 @@ def main():
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # multi_turn 通过 SGLang API，不需要本地加载模型
     model, tokenizer = None, None
     if args.mode != "multi_turn":
         print(f"Loading model: {args.model}")
@@ -343,10 +445,12 @@ def main():
         if args.mode == "multi_turn":
             result = evaluate_multi_turn(
                 sglang_url=args.sglang_url,
+                model_path=args.model,
                 problems=problems,
                 max_turns=args.max_turns,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature or 0.7,
+                output_path=str(output_dir / f"{ds_name}_{args.mode}_progress.json"),
             )
         else:
             result = evaluate_one_shot(

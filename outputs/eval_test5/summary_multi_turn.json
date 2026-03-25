@@ -1,0 +1,19 @@
+{
+  "model": "/root/autodl-tmp/models/Qwen2.5-Coder-7B-Instruct",
+  "lora_path": null,
+  "mode": "multi_turn",
+  "results": {
+    "mbpp_test": {
+      "pass@1": 0.6,
+      "passed": 6,
+      "total": 10,
+      "agentic_metrics": {
+        "avg_turns": 2.1,
+        "avg_executions": 1.1,
+        "fix_rate": 0.5,
+        "fix_count": 1,
+        "first_attempt_correct": 5
+      }
+    }
+  }
+}
