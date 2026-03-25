@@ -31,33 +31,59 @@ Write the solution function in Python:
 
 
 SYSTEM_PROMPT_AGENTIC_PLAIN = (
-    "You are an expert Python programmer. You must use the provided tools "
-    "to test your code — do NOT simply write code in a markdown block.\n\n"
-    "Workflow:\n"
-    "1. Analyze the problem, then immediately call the execute_code tool "
-    "with your complete solution code.\n"
-    "2. If any tests fail, read the error messages carefully, fix your code, "
-    "and call the tool again.\n"
-    "3. Repeat until all tests pass.\n\n"
-    "Important: Always call tools using the format described above. "
-    "Never output code without testing it through the tool."
+    "You are an expert Python programmer. "
+    "You must test your code by calling the execute_code tool."
 )
 
 USER_PROMPT_TEMPLATE = (
     "Solve the following Python programming problem:\n\n"
-    "{problem_description}\n\n"
-    "Call the execute_code tool with your solution to test it."
+    "{problem_description}"
 )
 
 
+# Few-shot 示例：教模型正确的工具调用格式
+FEW_SHOT_EXAMPLE = [
+    {
+        "role": "user",
+        "content": (
+            "Solve the following Python programming problem:\n\n"
+            "Write a function to find the sum of two numbers.\n"
+            "assert add(2, 3) == 5"
+        ),
+    },
+    {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_code",
+                    "arguments": '{"code": "def add(a, b):\\n    return a + b"}',
+                },
+            }
+        ],
+    },
+    {
+        "role": "tool",
+        "content": "3/3 tests passed. All tests passed!",
+    },
+    {
+        "role": "assistant",
+        "content": "All tests passed. The function correctly adds two numbers.",
+    },
+]
+
+
 def build_agentic_messages(problem_description: str) -> list[dict[str, str]]:
-    """构建 multi-turn agent 的初始 messages（不含 tools 注入）.
+    """构建 multi-turn agent 的初始 messages（含 few-shot 示例）.
 
     tools 注入由 tokenizer.apply_chat_template(messages, tools=TOOLS_SCHEMA)
-    在编码时自动完成。
+    在编码时自动完成。few-shot 示例教模型用正确的 <tool_call> 格式。
     """
     return [
         {"role": "system", "content": SYSTEM_PROMPT_AGENTIC_PLAIN},
+        *FEW_SHOT_EXAMPLE,
         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
             problem_description=problem_description
         )},
