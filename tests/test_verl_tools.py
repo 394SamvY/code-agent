@@ -60,7 +60,7 @@ def test_single_tool_bug_fix():
     # 第一次：错误代码
     result = env.execute_tool("execute_code", code="def multiply(a, b):\n    return a + b")
     assert "0/1 tests passed" in result
-    assert "Failure details" in result
+    assert "FAILED" in result
     assert env.test_results_history == [{"passed": 0, "total": 1}]
 
     # 第二次：修复后

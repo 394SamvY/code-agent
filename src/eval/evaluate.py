@@ -39,81 +39,30 @@ from src.env.tools import TOOLS_SCHEMA
 
 
 def _parse_tool_call(text: str) -> tuple[str, dict | None]:
-    """从模型输出中解析工具调用，按优先级尝试多种格式.
+    """从模型输出中解析工具调用，只认 Qwen 标准格式。
 
-    支持格式（优先级从高到低）：
-    1. <tool_call>{"name": ..., "arguments": ...}</tool_call>  （Qwen 标准格式）
-    2. 裸 JSON 或代码块中的 {"name": "execute_code", ...}    （含 pretty-printed）
-
-    使用括号匹配而非正则来提取 JSON，正确处理嵌套 {} 和字符串内的 } 字符。
+    只支持: <tool_call>{"name": ..., "arguments": ...}</tool_call>
+    与 verl 训练时的解析行为一致，不做 fallback 兜底。
 
     Returns:
         (content, tool_call): content 是工具调用之前的文本,
         tool_call 是 {"name": ..., "arguments": {...}} 或 None.
     """
-    # 格式 1: <tool_call>...</tool_call> 标准 Qwen 格式
     match = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
     if match:
         content = text[: match.start()].strip()
-        parsed = _try_parse_tool_json(match.group(1))
-        if parsed:
-            return content, parsed
-
-    # 格式 2: 查找 {"name": "execute_code" 开头的 JSON 对象（支持 pretty-print）
-    for m in re.finditer(r'\{\s*"name"\s*:\s*"execute_code"', text):
-        json_str = _extract_json_object(text, m.start())
-        if json_str:
-            parsed = _try_parse_tool_json(json_str)
-            if parsed:
-                content = text[: m.start()].rstrip()
-                # 去除尾部残余的 ```json 等代码块标记
-                content = re.sub(r"```(?:json|xml)?\s*$", "", content).rstrip()
-                return content, parsed
+        try:
+            data = json.loads(match.group(1))
+            name = data.get("name", "")
+            arguments = data.get("arguments", {})
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
+            if name and isinstance(arguments, dict):
+                return content, {"name": name, "arguments": arguments}
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
 
     return text, None
-
-
-def _extract_json_object(text: str, start: int) -> str | None:
-    """从 start 位置开始提取完整的 JSON 对象，正确处理嵌套和字符串。"""
-    depth = 0
-    in_string = False
-    escape_next = False
-
-    for i in range(start, len(text)):
-        c = text[i]
-        if escape_next:
-            escape_next = False
-            continue
-        if in_string:
-            if c == "\\":
-                escape_next = True
-            elif c == '"':
-                in_string = False
-            continue
-        if c == '"':
-            in_string = True
-        elif c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    return None
-
-
-def _try_parse_tool_json(raw: str) -> dict | None:
-    """尝试将 JSON 字符串解析为 {"name": ..., "arguments": {...}}."""
-    try:
-        data = json.loads(raw)
-        name = data.get("name", "")
-        arguments = data.get("arguments", {})
-        if isinstance(arguments, str):
-            arguments = json.loads(arguments)
-        if name and isinstance(arguments, dict):
-            return {"name": name, "arguments": arguments}
-    except (json.JSONDecodeError, KeyError, TypeError):
-        pass
-    return None
 
 
 def extract_code_from_completion(text: str) -> str:
