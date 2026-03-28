@@ -32,7 +32,8 @@ Write the solution function in Python:
 
 SYSTEM_PROMPT_AGENTIC_PLAIN = (
     "You are an expert Python programmer. "
-    "You must test your code by calling the execute_code tool."
+    "Write a solution, then call the execute_code tool to test it. "
+    "If any test fails, analyze the error, fix your code, and call execute_code again."
 )
 
 USER_PROMPT_TEMPLATE = (

@@ -19,6 +19,7 @@ verl 的数据集要求每条记录包含:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -77,11 +78,20 @@ def problems_to_verl_parquet(
 
 def prepare_verl_datasets(
     output_dir: str = "./data/verl",
+    data_dir: str | None = None,
     use_apps: bool = True,
     apps_difficulty: str = "introductory",
     apps_max_samples: int = 3000,
 ) -> dict[str, Path]:
     """准备所有 verl 训练和验证数据集。
+
+    Args:
+        output_dir: parquet 输出目录
+        data_dir: 本地数据集根目录（含 mbpp_full/ humaneval/ 子目录），
+                  无外网环境使用
+        use_apps: 是否加载 APPS 数据集（需要网络或本地缓存）
+        apps_difficulty: APPS 难度过滤
+        apps_max_samples: APPS 最大样本数
 
     Returns:
         字典: {split_name: parquet_path}
@@ -89,8 +99,11 @@ def prepare_verl_datasets(
     output_dir = Path(output_dir)
     paths: dict[str, Path] = {}
 
+    mbpp_local = os.path.join(data_dir, "mbpp_full") if data_dir else None
+    humaneval_local = os.path.join(data_dir, "humaneval") if data_dir else None
+
     print("Loading MBPP train...")
-    train_problems = load_mbpp(version="full", split="train")
+    train_problems = load_mbpp(version="full", split="train", local_path=mbpp_local)
     print(f"  MBPP train: {len(train_problems)} problems")
 
     if use_apps:
@@ -108,19 +121,19 @@ def prepare_verl_datasets(
     )
 
     print("Loading MBPP validation...")
-    val_problems = load_mbpp(version="full", split="validation")
+    val_problems = load_mbpp(version="full", split="validation", local_path=mbpp_local)
     paths["val"] = problems_to_verl_parquet(
         val_problems, output_dir / "val.parquet"
     )
 
     print("Loading MBPP test...")
-    test_problems = load_mbpp(version="full", split="test")
+    test_problems = load_mbpp(version="full", split="test", local_path=mbpp_local)
     paths["test"] = problems_to_verl_parquet(
         test_problems, output_dir / "test.parquet"
     )
 
     print("Loading HumanEval...")
-    he_problems = load_humaneval()
+    he_problems = load_humaneval(local_path=humaneval_local)
     paths["humaneval"] = problems_to_verl_parquet(
         he_problems, output_dir / "humaneval.parquet"
     )
@@ -129,7 +142,20 @@ def prepare_verl_datasets(
 
 
 if __name__ == "__main__":
-    paths = prepare_verl_datasets()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", type=str, default=None,
+                        help="本地数据集根目录（含 mbpp_full/ humaneval/ 子目录）")
+    parser.add_argument("--output_dir", type=str, default="./data/verl")
+    parser.add_argument("--no_apps", action="store_true",
+                        help="跳过 APPS 数据集（无网络或无本地缓存时使用）")
+    args = parser.parse_args()
+
+    paths = prepare_verl_datasets(
+        output_dir=args.output_dir,
+        data_dir=args.data_dir,
+        use_apps=not args.no_apps,
+    )
     print("\nAll datasets prepared:")
     for name, path in paths.items():
         print(f"  {name}: {path}")
