@@ -1,0 +1,12 @@
+{
+  "stats": {
+    "total": 370,
+    "passed": 342,
+    "failed": 26,
+    "error": 2,
+    "total_turns": 799,
+    "total_executions": 431
+  },
+  "count": 368,
+  "last_task_id": "mbpp/970"
+}
