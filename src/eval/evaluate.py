@@ -2,10 +2,9 @@
 评估脚本
 ========
 
-支持三种评估模式：
+支持两种评估模式：
 1. one_shot: 模型一次性生成代码（本地 HuggingFace）
 2. multi_turn: 模型多轮与环境交互（通过 SGLang completions API + 手动 chat template 注入 tools）
-3. baseline: 等同于 one_shot（裸模型，不加载 LoRA）
 
 在 MBPP test 和 HumanEval 上评估 pass@1。
 """
@@ -20,7 +19,6 @@ import sys
 from pathlib import Path
 
 import torch
-from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -84,10 +82,9 @@ def extract_code_from_completion(text: str) -> str:
 
 def load_model_and_tokenizer(
     model_name: str,
-    lora_path: str | None = None,
     device: str = "auto",
 ):
-    """加载模型和 tokenizer，可选加载 LoRA."""
+    """加载模型和 tokenizer。SFT 模型直接传合并后的路径即可。"""
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     if device == "auto":
@@ -103,11 +100,6 @@ def load_model_and_tokenizer(
         torch_dtype=torch.float32 if device_map == "cpu" else torch.bfloat16,
         device_map=device_map,
     )
-
-    if lora_path:
-        print(f"Loading LoRA from {lora_path}")
-        model = PeftModel.from_pretrained(model, lora_path)
-        model = model.merge_and_unload()
 
     model.eval()
     return model, tokenizer
@@ -341,11 +333,10 @@ def _run_tests(code: str, test_list: list[str], timeout: int = 5) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Evaluate code agent")
     parser.add_argument("--model", type=str, required=True)
-    parser.add_argument("--lora_path", type=str, default=None)
     parser.add_argument("--datasets", nargs="+", default=["mbpp_test", "humaneval"],
                         choices=["mbpp_test", "mbpp_val", "humaneval"])
     parser.add_argument("--mode", type=str, default="one_shot",
-                        choices=["one_shot", "multi_turn", "baseline"])
+                        choices=["one_shot", "multi_turn"])
     parser.add_argument("--output_dir", type=str, default="./outputs/eval")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max_new_tokens", type=int, default=512)
@@ -364,8 +355,7 @@ def main():
     model, tokenizer = None, None
     if args.mode != "multi_turn":
         print(f"Loading model: {args.model}")
-        lora = args.lora_path if args.mode != "baseline" else None
-        model, tokenizer = load_model_and_tokenizer(args.model, lora, args.device)
+        model, tokenizer = load_model_and_tokenizer(args.model, args.device)
     else:
         print(f"Using SGLang backend at {args.sglang_url}")
 
@@ -438,7 +428,6 @@ def main():
     with open(summary_path, "w") as f:
         json.dump({
             "model": args.model,
-            "lora_path": args.lora_path,
             "mode": args.mode,
             "results": all_results,
         }, f, indent=2)

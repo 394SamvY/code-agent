@@ -51,8 +51,22 @@ data:
 
   num_workers: 4                             # DataLoader 数据加载进程数
 
+  # --- 以下为 verl 源码必需的默认字段 ---
+  custom_cls:                                # 自定义数据集类，null 表示使用默认的 MultiTurnSFTDataset
+    path: null
+    name: null
+  use_shm: false                             # 是否使用共享内存加载数据
+  apply_chat_template_kwargs: {}             # 传给 apply_chat_template 的额外参数
+  balance_dp_token: false                    # 跨 DP rank 平衡 token 数（未实现）
+  ignore_input_ids_mismatch: false           # 是否忽略多轮拼接与整体 tokenize 的 input_ids 不一致
+  enable_thinking_key: enable_thinking       # 数据集中控制是否启用 thinking 的列名
+  enable_thinking_default: none              # 该列缺失时的默认值
+
 model:
+  _target_: verl.workers.config.HFModelConfig  # Hydra 实例化目标类（必需）
   path: /root/autodl-tmp/models/Qwen2.5-Coder-7B-Instruct      # 基座模型（本地路径）
+  enable_gradient_checkpointing: true        # 梯度检查点，用时间换显存
+  use_remove_padding: true                   # 移除 padding 提升计算效率
 
   # --- LoRA ---
   lora_rank: 16                              # 低秩矩阵的秩 r，越大表达力越强
@@ -63,19 +77,77 @@ model:
     - v_proj                                 #   attention value 投影
     - o_proj                                 #   attention output 投影
 
+# --- FSDP 分布式引擎 ---
+engine:
+  _target_: verl.workers.config.FSDPEngineConfig  # Hydra 实例化目标类（必需）
+  wrap_policy:
+    min_num_params: 0                        # FSDP 分片最小参数量阈值
+  param_offload: false                       # 不卸载模型参数到 CPU
+  optimizer_offload: false                   # 不卸载优化器状态到 CPU
+  offload_policy: false                      # FSDP2 offload 策略，关闭
+  reshard_after_forward: true                # 前向后重新分片，节省显存
+  fsdp_size: -1                              # FSDP 分片组大小，-1 为自动
+  model_dtype: bfloat16                      # 模型权重 dtype（fp32 会 OOM，7B 模型 bf16 约占 14GB）
+  dtype: bfloat16                            # 混合精度训练 dtype
+  use_torch_compile: true                    # 启用 torch.compile 加速
+  strategy: fsdp                             # 使用 FSDP（而非 FSDP2）
+  seed: 42                                   # FSDP 随机种子
+  ulysses_sequence_parallel_size: 1          # 序列并行大小，1 = 不启用
+
 optim:
+  _target_: verl.workers.config.FSDPOptimizerConfig  # Hydra 实例化目标类（必需）
+  optimizer: AdamW                           # 优化器类型
+  optimizer_impl: torch.optim               # 优化器实现来源
   lr: 2e-5                                   # 学习率
   lr_scheduler_type: cosine                  # 余弦衰减：从 lr 逐渐降到接近 0
   lr_warmup_steps_ratio: 0.05               # 前 5% 步数线性升温，避免初始震荡
   weight_decay: 0.01                         # 权重衰减，轻微 L2 正则化
   clip_grad: 1.0                             # 梯度裁剪阈值，防止梯度爆炸
+  betas: [0.9, 0.999]                        # Adam 动量参数
+  total_training_steps: -1                   # 由 trainer 自动设置
+  min_lr_ratio: 0.0                          # 余弦衰减最低学习率比例
+
+# --- 性能分析器（默认关闭）---
+profiler:
+  _target_: verl.utils.profiler.ProfilerConfig  # Hydra 实例化目标类（必需）
+  tool: torch                                # 分析工具类型
+  enable: false                              # 不启用性能分析
+  all_ranks: false
+  ranks: []
+  save_path: outputs/profile
+  tool_config:
+    torch:
+      _target_: verl.utils.profiler.config.TorchProfilerToolConfig
+      contents: []
+      discrete: false
+      name: torch
+
+# --- Checkpoint 配置 ---
+# 默认配置中为内联定义（不通过 defaults 机制引入），需手动添加
+checkpoint:
+  _target_: verl.trainer.config.CheckpointConfig  # Hydra 实例化目标类
+  save_contents: ["model", "optimizer", "extra"]  # checkpoint 保存内容：模型权重、优化器状态、额外元数据
+  load_contents: ${checkpoint.save_contents}       # 恢复时加载的内容，默认与保存内容一致
+  mbridge_config: {}                               # Mbridge 扩展配置（留空即可）
 
 trainer:
   total_epochs: 3                            # 训练轮数：数据集遍历 3 次
+  total_training_steps: null                 # 总训练步数，null 表示由 epochs × steps_per_epoch 自动计算
   save_freq: after_each_epoch                # 每 epoch 保存 checkpoint
   test_freq: after_each_epoch                # 每 epoch 在验证集上算 loss
   default_local_dir: outputs/sft_ckpt        # checkpoint 保存目录
+  default_hdfs_dir: null                     # HDFS 远程保存路径，不用则留 null
   project_name: code-agent-sft               # 日志项目名
   experiment_name: qwen7b-multiturn-sft      # 日志实验名
   logger:
-    - console                                # 日志输出到终端（可加 wandb）
+    - console                                # 日志输出到终端
+    - tensorboard                            # 写入 TensorBoard 事件文件，可用 tensorboard --logdir=tensorboard_log/ 查看曲线
+    - file                                   # 写入 JSONL 文件，路径：./code-agent-sft/qwen7b-multiturn-sft.jsonl
+  seed: 1                                    # 随机种子，保证可复现
+  max_ckpt_to_keep: 1                         # 最多保留几个 checkpoint，只留最新的，旧的自动删除
+  resume_mode: auto                          # 恢复模式：auto=自动检测上次 ckpt / disable=从头训练 / resume_path=指定路径
+  resume_from_path: null                     # resume_mode=resume_path 时指定的 checkpoint 路径
+  device: cuda                               # 训练设备
+  nnodes: 1                                  # 节点数（单机=1）
+  n_gpus_per_node: 1                         # 每节点 GPU 数
+  profile_interval: [-1, -1]                 # 性能分析步数区间，[-1,-1] 表示不启用
