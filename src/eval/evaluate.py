@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from collections import Counter
 
-from src.data.dataset import load_mbpp, load_humaneval, CodeProblem
+from src.data.dataset import load_mbpp, load_humaneval, load_apps, CodeProblem
 from src.prompts import (
     SYSTEM_PROMPT_ONE_SHOT,
     build_one_shot_prompt,
@@ -334,7 +334,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate code agent")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--datasets", nargs="+", default=["mbpp_test", "humaneval"],
-                        choices=["mbpp_test", "mbpp_val", "humaneval"])
+                        choices=["mbpp_test", "mbpp_val", "humaneval", "apps_intro_test", "apps_intro_train"])
     parser.add_argument("--mode", type=str, default="one_shot",
                         choices=["one_shot", "multi_turn"])
     parser.add_argument("--output_dir", type=str, default="./outputs/eval")
@@ -368,6 +368,7 @@ def main():
 
         mbpp_local = os.path.join(args.data_dir, "mbpp_full") if args.data_dir else None
         humaneval_local = os.path.join(args.data_dir, "humaneval") if args.data_dir else None
+        apps_local = os.path.join(args.data_dir, "apps", f"{ds_name.split('_')[-1]}.jsonl") if args.data_dir and ds_name.startswith("apps_") else None
 
         if ds_name == "mbpp_test":
             problems = load_mbpp(version="full", split="test", max_samples=args.max_samples, local_path=mbpp_local)
@@ -375,6 +376,10 @@ def main():
             problems = load_mbpp(version="full", split="validation", max_samples=args.max_samples, local_path=mbpp_local)
         elif ds_name == "humaneval":
             problems = load_humaneval(max_samples=args.max_samples, local_path=humaneval_local)
+        elif ds_name == "apps_intro_test":
+            problems = load_apps(split="test", difficulty="introductory", max_samples=args.max_samples, local_path=apps_local)
+        elif ds_name == "apps_intro_train":
+            problems = load_apps(split="train", difficulty="introductory", max_samples=args.max_samples, local_path=apps_local)
         else:
             raise ValueError(f"Unknown dataset: {ds_name}")
 

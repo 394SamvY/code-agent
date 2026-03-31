@@ -118,6 +118,7 @@ def load_apps(
     split: str = "train",
     difficulty: str | None = None,
     max_samples: int | None = None,
+    local_path: str | None = None,
 ) -> list[CodeProblem]:
     """加载 APPS 数据集（~10000 题，含测试用例）.
 
@@ -127,16 +128,24 @@ def load_apps(
         split: "train" / "test"
         difficulty: 可选过滤难度 "introductory" / "interview" / "competition"
         max_samples: 限制样本数
+        local_path: 本地 JSONL 文件路径（如 /data/apps/train.jsonl）
 
     Returns:
         CodeProblem 列表
     """
-    ds = load_dataset("codeparrot/apps", split=split)
+    # codeparrot/apps 的 loading script 已废弃，直接加载 JSONL 文件
+    if local_path and os.path.exists(local_path):
+        ds = load_dataset("json", data_files=local_path, split="train")
+    else:
+        ds = load_dataset(
+            "json",
+            data_files=f"hf://datasets/codeparrot/apps/{split}.jsonl",
+            split="train",
+        )
 
     if difficulty is not None:
-        difficulty_map = {"introductory": "0", "interview": "1", "competition": "2"}
-        target = difficulty_map.get(difficulty, difficulty)
-        ds = ds.filter(lambda x: str(x.get("difficulty", "")) == target)
+        # JSONL 中 difficulty 字段值为字符串: "introductory" / "interview" / "competition"
+        ds = ds.filter(lambda x: str(x.get("difficulty", "")) == difficulty)
 
     if max_samples is not None:
         ds = ds.select(range(min(max_samples, len(ds))))
@@ -225,8 +234,7 @@ def _parse_apps_tests(row: dict, idx: int) -> list[str]:
             )
             test_list.append(test_code)
 
-    # 限制每题最多 5 条测试，避免执行时间过长
-    return test_list[:5]
+    return test_list
 
 
 # ---------------------------------------------------------------------------
