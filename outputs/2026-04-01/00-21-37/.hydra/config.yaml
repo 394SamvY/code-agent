@@ -1,0 +1,108 @@
+data:
+  train_files: data/sft/train_combined.parquet
+  val_files: data/sft/val.parquet
+  messages_key: messages
+  tools_key: tools
+  use_dynamic_bsz: true
+  max_token_len_per_gpu: 8192
+  pad_mode: no_padding
+  max_length: 4096
+  truncation: right
+  train_batch_size: 16
+  micro_batch_size_per_gpu: 2
+  num_workers: 4
+  custom_cls:
+    path: null
+    name: null
+  use_shm: false
+  apply_chat_template_kwargs: {}
+  balance_dp_token: false
+  ignore_input_ids_mismatch: false
+  enable_thinking_key: enable_thinking
+  enable_thinking_default: none
+model:
+  _target_: verl.workers.config.HFModelConfig
+  path: /root/autodl-tmp/models/Qwen2.5-Coder-7B-Instruct
+  enable_gradient_checkpointing: true
+  use_remove_padding: true
+  lora_rank: 16
+  lora_alpha: 32
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - lm_head
+engine:
+  _target_: verl.workers.config.FSDPEngineConfig
+  wrap_policy:
+    min_num_params: 0
+  param_offload: false
+  optimizer_offload: false
+  offload_policy: false
+  reshard_after_forward: true
+  fsdp_size: -1
+  model_dtype: bfloat16
+  dtype: bfloat16
+  use_torch_compile: true
+  strategy: fsdp
+  seed: 42
+  ulysses_sequence_parallel_size: 1
+optim:
+  _target_: verl.workers.config.FSDPOptimizerConfig
+  optimizer: AdamW
+  optimizer_impl: torch.optim
+  lr: 2.0e-05
+  lr_scheduler_type: cosine
+  lr_warmup_steps_ratio: 0.05
+  weight_decay: 0.01
+  clip_grad: 1.0
+  betas:
+  - 0.9
+  - 0.999
+  total_training_steps: -1
+  min_lr_ratio: 0.0
+profiler:
+  _target_: verl.utils.profiler.ProfilerConfig
+  tool: torch
+  enable: false
+  all_ranks: false
+  ranks: []
+  save_path: outputs/profile
+  tool_config:
+    torch:
+      _target_: verl.utils.profiler.config.TorchProfilerToolConfig
+      contents: []
+      discrete: false
+      name: torch
+checkpoint:
+  _target_: verl.trainer.config.CheckpointConfig
+  save_contents:
+  - model
+  - optimizer
+  - extra
+  load_contents: ${checkpoint.save_contents}
+  mbridge_config: {}
+trainer:
+  total_epochs: 10
+  total_training_steps: null
+  save_freq: after_each_epoch
+  test_freq: after_each_epoch
+  default_local_dir: outputs/sft_ckpt
+  default_hdfs_dir: null
+  project_name: code-agent-sft
+  experiment_name: qwen7b-multiturn-sft
+  logger:
+  - console
+  - tensorboard
+  - file
+  seed: 1
+  max_ckpt_to_keep: 1
+  resume_mode: auto
+  resume_from_path: null
+  device: cuda
+  nnodes: 1
+  n_gpus_per_node: 1
+  profile_interval:
+  - -1
+  - -1

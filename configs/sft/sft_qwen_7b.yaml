@@ -16,7 +16,7 @@
 #     trainer.n_gpus_per_node=4
 
 data:
-  train_files: data/sft/train.parquet       # 训练数据路径
+  train_files: data/sft/train_combined.parquet  # 训练数据路径（506 条合并数据）
   val_files: data/sft/val.parquet           # 验证数据路径
 
   messages_key: messages                     # parquet 中多轮对话列的列名
@@ -76,6 +76,7 @@ model:
     - k_proj                                 #   attention key 投影
     - v_proj                                 #   attention value 投影
     - o_proj                                 #   attention output 投影
+    - lm_head                                #   输出投影层（vocab 概率分布），不加则无法学会生成 <tool_call> 等特殊 token
 
 # --- FSDP 分布式引擎 ---
 engine:
@@ -131,7 +132,7 @@ checkpoint:
   mbridge_config: {}                               # Mbridge 扩展配置（留空即可）
 
 trainer:
-  total_epochs: 3                            # 训练轮数：数据集遍历 3 次
+  total_epochs: 10                           # 训练轮数：数据集遍历 10 次
   total_training_steps: null                 # 总训练步数，null 表示由 epochs × steps_per_epoch 自动计算
   save_freq: after_each_epoch                # 每 epoch 保存 checkpoint
   test_freq: after_each_epoch                # 每 epoch 在验证集上算 loss
