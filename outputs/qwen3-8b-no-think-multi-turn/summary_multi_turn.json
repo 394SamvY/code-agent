@@ -1,0 +1,30 @@
+{
+  "model": "/root/autodl-tmp/models/Qwen3-8B",
+  "mode": "multi_turn",
+  "results": {
+    "mbpp_test": {
+      "pass@1": 0.724,
+      "passed": 362,
+      "total": 500,
+      "agentic_metrics": {
+        "avg_turns": 3.24,
+        "avg_executions": 2.24,
+        "fix_rate": 0.3616,
+        "fix_count": 64,
+        "first_attempt_correct": 298
+      }
+    },
+    "humaneval": {
+      "pass@1": 0.8109756097560976,
+      "passed": 133,
+      "total": 164,
+      "agentic_metrics": {
+        "avg_turns": 2.62,
+        "avg_executions": 1.53,
+        "fix_rate": 0.4054,
+        "fix_count": 15,
+        "first_attempt_correct": 118
+      }
+    }
+  }
+}

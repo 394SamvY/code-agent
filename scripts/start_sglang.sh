@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-BASE_MODEL=/root/autodl-tmp/models/Qwen2.5-Coder-7B-Instruct
+BASE_MODEL=/root/autodl-tmp/models/Qwen3-8B
 PORT=${1:-30000}
 MODEL=${2:-$BASE_MODEL}
 MEM_FRACTION=0.8

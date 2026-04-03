@@ -2,11 +2,14 @@
 评估脚本
 ========
 
-支持两种评估模式：
-1. one_shot: 模型一次性生成代码（本地 HuggingFace）
-2. multi_turn: 模型多轮与环境交互（通过 SGLang completions API + 手动 chat template 注入 tools）
+支持两种评估模式（均通过 SGLang completions API）：
+1. one_shot: 模型一次性生成代码
+2. multi_turn: 模型多轮与环境交互
 
 在 MBPP test 和 HumanEval 上评估 pass@1。
+
+使用前需先启动 SGLang server:
+  bash scripts/start_sglang.sh
 """
 
 from __future__ import annotations
@@ -18,12 +21,9 @@ import re
 import sys
 from pathlib import Path
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from collections import Counter
 
 from src.data.dataset import load_mbpp, load_humaneval, load_apps, CodeProblem
 from src.prompts import (
@@ -36,19 +36,25 @@ from src.env.sandbox import execute_with_tests
 from src.env.tools import TOOLS_SCHEMA
 
 
+def _strip_thinking(text: str) -> str:
+    """剥离 Qwen3 的 <think>...</think> 块，返回剩余文本。"""
+    return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
+
+
 def _parse_tool_call(text: str) -> tuple[str, dict | None]:
     """从模型输出中解析工具调用，只认 Qwen 标准格式。
 
-    只支持: <tool_call>{"name": ..., "arguments": ...}</tool_call>
-    与 verl 训练时的解析行为一致，不做 fallback 兜底。
+    支持 Qwen3 的 <think> 块：先剥离再解析 <tool_call>。
+    兼容 Qwen2.5（arguments 为 stringified JSON）和 Qwen3（arguments 为原生 dict）。
 
     Returns:
-        (content, tool_call): content 是工具调用之前的文本,
+        (content, tool_call): content 是工具调用之前的文本（不含 think 块），
         tool_call 是 {"name": ..., "arguments": {...}} 或 None.
     """
-    match = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
+    cleaned = _strip_thinking(text)
+    match = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", cleaned, re.DOTALL)
     if match:
-        content = text[: match.start()].strip()
+        content = cleaned[: match.start()].strip()
         try:
             data = json.loads(match.group(1))
             name = data.get("name", "")
@@ -60,16 +66,18 @@ def _parse_tool_call(text: str) -> tuple[str, dict | None]:
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
-    return text, None
+    return cleaned, None
 
 
 def extract_code_from_completion(text: str) -> str:
     """从 one-shot completion 中提取代码.
 
     提取策略：
+    0. 剥离 Qwen3 <think>...</think> 块
     1. 优先匹配 ```python ... ``` 代码块
     2. fallback：返回整段文本
     """
+    text = _strip_thinking(text)
     pattern = re.compile(r"```python\s*\n?(.*?)```", re.DOTALL)
     match = pattern.search(text)
     if match:
@@ -80,39 +88,35 @@ def extract_code_from_completion(text: str) -> str:
     return text.strip()
 
 
-def load_model_and_tokenizer(
-    model_name: str,
-    device: str = "auto",
-):
-    """加载模型和 tokenizer。SFT 模型直接传合并后的路径即可。"""
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    if device == "auto":
-        if torch.cuda.is_available():
-            device_map = "auto"
-        else:
-            device_map = "cpu"
-    else:
-        device_map = device
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float32 if device_map == "cpu" else torch.bfloat16,
-        device_map=device_map,
+def _sglang_complete(
+    client,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    stop: list[str] | None = None,
+) -> str:
+    """调用 SGLang completions API 并返回生成文本。"""
+    if stop is None:
+        stop = ["<|im_end|>", "<|endoftext|>"]
+    response = client.completions.create(
+        model="default",
+        prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stop=stop,
     )
-
-    model.eval()
-    return model, tokenizer
+    return response.choices[0].text
 
 
 def evaluate_one_shot(
-    model,
+    client,
     tokenizer,
     problems: list[CodeProblem],
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 1024,
     temperature: float = 0.0,
+    enable_thinking: bool = False,
 ) -> dict:
-    """One-shot 评估：模型一次性生成代码."""
+    """One-shot 评估：通过 SGLang，模型一次性生成代码。"""
     passed = 0
     total = len(problems)
     results: list[dict] = []
@@ -123,28 +127,13 @@ def evaluate_one_shot(
             {"role": "user", "content": build_one_shot_prompt(prob.prompt)},
         ]
 
-        input_ids = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+            enable_thinking=enable_thinking,
         )
-        if hasattr(input_ids, "input_ids"):
-            input_ids = input_ids.input_ids
-        input_ids = input_ids.to(model.device)
 
-        gen_kwargs = {
-            "max_new_tokens": max_new_tokens,
-            "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
-        }
-        if temperature > 0:
-            gen_kwargs["do_sample"] = True
-            gen_kwargs["temperature"] = temperature
-        else:
-            gen_kwargs["do_sample"] = False
-
-        with torch.no_grad():
-            outputs = model.generate(input_ids, **gen_kwargs)
-
-        new_ids = outputs[0][input_ids.shape[1]:]
-        completion = tokenizer.decode(new_ids, skip_special_tokens=True)
+        completion = _sglang_complete(client, prompt, max_new_tokens, temperature)
+        completion = _strip_thinking(completion)
         code = extract_code_from_completion(completion)
 
         is_correct = _run_tests(code, prob.test_list)
@@ -169,19 +158,19 @@ def evaluate_one_shot(
 
 
 def evaluate_multi_turn(
-    sglang_url: str,
-    model_path: str,
+    client,
+    tokenizer,
     problems: list[CodeProblem],
     max_turns: int = 5,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 1024,
     temperature: float = 0.7,
     timeout: int = 5,
     output_path: str | None = None,
+    enable_thinking: bool = False,
 ) -> dict:
-    """Multi-turn 评估：通过 SGLang completions API + 手动 apply_chat_template 注入 tools.
+    """Multi-turn 评估：通过 SGLang completions API + apply_chat_template 注入 tools.
 
-    绕开 SGLang chat completions 的 tools 处理（其 --tool-call-parser qwen 未正确
-    注入 Qwen 格式的 tools 描述），改为：
+    流程：
     1. 用 tokenizer.apply_chat_template(messages, tools=TOOLS_SCHEMA) 构建完整 prompt
     2. 用 /v1/completions 端点做原始文本补全
     3. 手动解析 <tool_call> 标签
@@ -190,11 +179,6 @@ def evaluate_multi_turn(
     - avg_turns: 平均交互轮数
     - fix_rate: 修复率（首次失败但最终通过的比例）
     """
-    from openai import OpenAI
-
-    client = OpenAI(base_url=sglang_url, api_key="EMPTY")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-
     passed = 0
     total = len(problems)
     results: list[dict] = []
@@ -221,20 +205,14 @@ def evaluate_multi_turn(
                 tools=TOOLS_SCHEMA,
                 tokenize=False,
                 add_generation_prompt=True,
+                enable_thinking=enable_thinking,
             )
 
             if i == 0 and _turn == 0:
                 print(f"\n[DEBUG] full prompt:\n{prompt}")
 
-            response = client.completions.create(
-                model="default",
-                prompt=prompt,
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                stop=["<|im_end|>", "<|endoftext|>"],
-            )
-
-            assistant_text = response.choices[0].text
+            raw_text = _sglang_complete(client, prompt, max_new_tokens, temperature)
+            assistant_text = _strip_thinking(raw_text)
             num_turns += 1
 
             content, tool_call = _parse_tool_call(assistant_text)
@@ -248,7 +226,7 @@ def evaluate_multi_turn(
             if tool_call:
                 messages.append({
                     "role": "assistant",
-                    "content": "",
+                    "content": content or "",
                     "tool_calls": [{
                         "type": "function",
                         "function": {
@@ -278,6 +256,13 @@ def evaluate_multi_turn(
 
         all_turn_counts.append(num_turns)
 
+        serialized_msgs = []
+        for m in messages:
+            entry = {"role": m["role"], "content": m.get("content", "")}
+            if "tool_calls" in m:
+                entry["tool_calls"] = m["tool_calls"]
+            serialized_msgs.append(entry)
+
         results.append({
             "task_id": prob.task_id,
             "passed": is_correct,
@@ -286,10 +271,7 @@ def evaluate_multi_turn(
             "first_test_passed": first_test_passed,
             "final_code": env.current_code,
             "test_results_history": env.test_results_history,
-            "messages": [
-                {"role": m["role"], "content": m.get("content", "")}
-                for m in messages
-            ],
+            "messages": serialized_msgs,
         })
 
         if output_path:
@@ -332,32 +314,34 @@ def _run_tests(code: str, test_list: list[str], timeout: int = 5) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate code agent")
-    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--model", type=str, required=True,
+                        help="模型路径（用于加载 tokenizer）")
     parser.add_argument("--datasets", nargs="+", default=["mbpp_test", "humaneval"],
                         choices=["mbpp_test", "mbpp_val", "humaneval", "apps_intro_test", "apps_intro_train"])
     parser.add_argument("--mode", type=str, default="one_shot",
                         choices=["one_shot", "multi_turn"])
     parser.add_argument("--output_dir", type=str, default="./outputs/eval")
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--max_new_tokens", type=int, default=512)
+    parser.add_argument("--max_new_tokens", type=int, default=1024)
     parser.add_argument("--max_turns", type=int, default=5)
     parser.add_argument("--max_samples", type=int, default=None)
-    parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--data_dir", type=str, default=None,
                         help="本地数据集目录（无外网环境使用），内含 mbpp_full/ humaneval/ 子目录")
     parser.add_argument("--sglang_url", type=str, default="http://localhost:30000/v1",
-                        help="SGLang server 的 OpenAI 兼容 API 地址（multi_turn 模式使用）")
+                        help="SGLang server 的 OpenAI 兼容 API 地址")
+    parser.add_argument("--enable_thinking", action="store_true", default=False,
+                        help="启用 Qwen3 thinking mode（模型会先推理再回答）")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model, tokenizer = None, None
-    if args.mode != "multi_turn":
-        print(f"Loading model: {args.model}")
-        model, tokenizer = load_model_and_tokenizer(args.model, args.device)
-    else:
-        print(f"Using SGLang backend at {args.sglang_url}")
+    from openai import OpenAI
+    client = OpenAI(base_url=args.sglang_url, api_key="EMPTY")
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+
+    print(f"Using SGLang backend at {args.sglang_url}")
+    print(f"Tokenizer: {args.model}")
 
     all_results: dict[str, dict] = {}
 
@@ -387,19 +371,23 @@ def main():
 
         if args.mode == "multi_turn":
             result = evaluate_multi_turn(
-                sglang_url=args.sglang_url,
-                model_path=args.model,
+                client=client,
+                tokenizer=tokenizer,
                 problems=problems,
                 max_turns=args.max_turns,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature or 0.7,
                 output_path=str(output_dir / f"{ds_name}_{args.mode}_progress.json"),
+                enable_thinking=args.enable_thinking,
             )
         else:
             result = evaluate_one_shot(
-                model, tokenizer, problems,
+                client=client,
+                tokenizer=tokenizer,
+                problems=problems,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
+                enable_thinking=args.enable_thinking,
             )
 
         all_results[ds_name] = {

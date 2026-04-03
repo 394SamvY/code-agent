@@ -1,0 +1,2507 @@
+{
+  "pass@1": 0.614,
+  "passed": 307,
+  "total": 500,
+  "results": [
+    {
+      "task_id": "mbpp/11",
+      "passed": false,
+      "code": "def remove_Occ(s, char):\n    parts = s.split(char)\n    return char.join(parts[1:-1]) if len(parts) > 2 else s"
+    },
+    {
+      "task_id": "mbpp/12",
+      "passed": true,
+      "code": "def sort_matrix(matrix):\n    return sorted(matrix, key=lambda x: sum(x))"
+    },
+    {
+      "task_id": "mbpp/13",
+      "passed": false,
+      "code": "from collections import Counter\n\ndef count_common(words):\n    return Counter(words).most_common()"
+    },
+    {
+      "task_id": "mbpp/14",
+      "passed": true,
+      "code": "def find_Volume(length, width, height):\n    return (length * width * height) // 2"
+    },
+    {
+      "task_id": "mbpp/15",
+      "passed": false,
+      "code": "def split_lowerstring(s):\n    result = []\n    i = 0\n    while i < len(s):\n        if s[i].islower():\n            split_index = i\n            while split_index < len(s) and s[split_index].islower():\n                split_index += 1\n            result.append(s[i:split_index])\n            i = split_index\n        else:\n            i += 1\n    return result"
+    },
+    {
+      "task_id": "mbpp/16",
+      "passed": true,
+      "code": "import re\n\ndef text_lowercase_underscore(text):\n    pattern = r'^[a-z]+_[a-z]+$'\n    if re.search(pattern, text):\n        return 'Found a match!'\n    else:\n        return 'Not matched!'"
+    },
+    {
+      "task_id": "mbpp/17",
+      "passed": true,
+      "code": "def square_perimeter(side):\n    return 4 * side"
+    },
+    {
+      "task_id": "mbpp/18",
+      "passed": true,
+      "code": "def remove_dirty_chars(s1, s2):\n    return ''.join(char for char in s1 if char not in s2)"
+    },
+    {
+      "task_id": "mbpp/19",
+      "passed": true,
+      "code": "def test_duplicate(arr):\n    return len(arr) != len(set(arr))"
+    },
+    {
+      "task_id": "mbpp/20",
+      "passed": false,
+      "code": "def is_woodall(n):\n    if n <= 0:\n        return False\n    for i in range(1, n+1):\n        if (1 << i) - 1 == n:\n            return True\n    return False"
+    },
+    {
+      "task_id": "mbpp/21",
+      "passed": false,
+      "code": "def multiples_of_num(n, m):\n    return [n * i for i in range(1, m + 1)]"
+    },
+    {
+      "task_id": "mbpp/22",
+      "passed": true,
+      "code": "def find_first_duplicate(arr):\n    seen = set()\n    for num in arr:\n        if num in seen:\n            return num\n        seen.add(num)\n    return -1"
+    },
+    {
+      "task_id": "mbpp/23",
+      "passed": true,
+      "code": "def maximum_Sum(list_of_lists):\n    return max(sum(sublist) for sublist in list_of_lists)"
+    },
+    {
+      "task_id": "mbpp/24",
+      "passed": false,
+      "code": "def binary_to_decimal(binary):\n    return int(binary, 2)"
+    },
+    {
+      "task_id": "mbpp/25",
+      "passed": true,
+      "code": "def find_Product(arr, n):\n    product = 1\n    seen = set()\n    for i in range(n):\n        if arr[i] not in seen:\n            product *= arr[i]\n            seen.add(arr[i])\n    return product"
+    },
+    {
+      "task_id": "mbpp/26",
+      "passed": false,
+      "code": "def check_k_elements(tuples_list, k):\n    return all(len(t) == k for t in tuples_list)"
+    },
+    {
+      "task_id": "mbpp/27",
+      "passed": true,
+      "code": "def remove(lst):\n    return [s.replace('0', '').replace('1', '').replace('2', '').replace('3', '').replace('4', '').replace('5', '').replace('6', '').replace('7', '').replace('8', '').replace('9', '') for s in lst]"
+    },
+    {
+      "task_id": "mbpp/28",
+      "passed": true,
+      "code": "def binomial_Coeff(n, k):\n    if k > n:\n        return 0\n    if k == 0 or k == n:\n        return 1\n    k = min(k, n - k)\n    result = 1\n    for i in range(1, k + 1):\n        result = result * (n - i + 1) // i\n    return result"
+    },
+    {
+      "task_id": "mbpp/29",
+      "passed": true,
+      "code": "def get_Odd_Occurrence(arr, n):\n    result = 0\n    for num in arr:\n        result ^= num\n    return result"
+    },
+    {
+      "task_id": "mbpp/30",
+      "passed": true,
+      "code": "def count_Substring_With_Equal_Ends(s):\n    count = 0\n    n = len(s)\n    for i in range(n):\n        for j in range(i, n):\n            if s[i] == s[j]:\n                count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/31",
+      "passed": false,
+      "code": "import heapq\nfrom collections import defaultdict\n\ndef func(lists, k):\n    freq = defaultdict(int)\n    for lst in lists:\n        for num in lst:\n            freq[num] += 1\n    heap = []\n    for num, count in freq.items():\n        heapq.heappush(heap, (-count, num))\n    result = []\n    for _ in range(k):\n        if not heap:\n            break\n        count, num = heapq.heappop(heap)\n        result.append(num)\n    return result"
+    },
+    {
+      "task_id": "mbpp/32",
+      "passed": true,
+      "code": "def max_Prime_Factors(n):\n    i = 2\n    while i * i <= n:\n        while n % i == 0:\n            n //= i\n        i += 1\n    return n"
+    },
+    {
+      "task_id": "mbpp/33",
+      "passed": false,
+      "code": "def decimal_To_Binary(n):\n    return bin(n)[2:]"
+    },
+    {
+      "task_id": "mbpp/34",
+      "passed": false,
+      "code": "def find_missing(arr):\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] != mid + 1:\n            right = mid - 1\n        else:\n            left = mid + 1\n    return left + 1"
+    },
+    {
+      "task_id": "mbpp/35",
+      "passed": true,
+      "code": "def find_rect_num(n):\n    return n * n + n"
+    },
+    {
+      "task_id": "mbpp/36",
+      "passed": false,
+      "code": "def find_Nth_Digit(numerator, denominator, n):\n    while numerator >= denominator:\n        numerator %= denominator\n    num_str = str(numerator)\n    return int(num_str[n-1])"
+    },
+    {
+      "task_id": "mbpp/37",
+      "passed": false,
+      "code": "def sort_mixed_list(lst):\n    return sorted(lst, key=lambda x: (isinstance(x, int), x))"
+    },
+    {
+      "task_id": "mbpp/38",
+      "passed": true,
+      "code": "def div_even_odd(lst):\n    even = next(i for i in lst if i % 2 == 0)\n    odd = next(i for i in lst if i % 2 != 0)\n    return even / odd"
+    },
+    {
+      "task_id": "mbpp/39",
+      "passed": false,
+      "code": "from collections import Counter\n\ndef rearange_string(s):\n    count = Counter(s)\n    if max(count.values()) > (len(s) + 1) // 2:\n        return None\n    result = [''] * len(s)\n    index = 0\n    for char, _ in sorted(count.items(), key=lambda x: -count[x]):\n        for _ in range(count[char]):\n            result[index] = char\n            index += 2\n            if index >= len(s):\n                index = 1\n    return ''.join(result)"
+    },
+    {
+      "task_id": "mbpp/40",
+      "passed": true,
+      "code": "from collections import defaultdict\n\ndef freq_element(list_of_lists):\n    freq = defaultdict(int)\n    for sublist in list_of_lists:\n        for element in sublist:\n            freq[element] += 1\n    return dict(freq)"
+    },
+    {
+      "task_id": "mbpp/41",
+      "passed": true,
+      "code": "def filter_evennumbers(numbers):\n    return list(filter(lambda x: x % 2 == 0, numbers))"
+    },
+    {
+      "task_id": "mbpp/42",
+      "passed": false,
+      "code": "def find_Sum(arr, target):\n    count = {}\n    for num in arr:\n        count[num] = count.get(num, 0) + 1\n    total = 0\n    for num, freq in count.items():\n        if freq > 1:\n            total += num\n    return total"
+    },
+    {
+      "task_id": "mbpp/43",
+      "passed": true,
+      "code": "import re\n\ndef text_match(text):\n    pattern = r'^[a-z]+_[a-z]+$'\n    if re.search(pattern, text):\n        return 'Found a match!'\n    else:\n        return 'Not matched!'"
+    },
+    {
+      "task_id": "mbpp/44",
+      "passed": false,
+      "code": "import re\n\ndef text_match_string(s):\n    match = re.match(r'\\b\\w+\\b', s)\n    return ('Matched!', match.group()) if match else ('Not matched!',)"
+    },
+    {
+      "task_id": "mbpp/45",
+      "passed": true,
+      "code": "import math\nfrom functools import reduce\n\ndef get_gcd(arr):\n    return reduce(math.gcd, arr)"
+    },
+    {
+      "task_id": "mbpp/46",
+      "passed": true,
+      "code": "def test_distinct(nums):\n    return len(set(nums)) == len(nums)"
+    },
+    {
+      "task_id": "mbpp/47",
+      "passed": false,
+      "code": "def compute_Last_Digit(a, b):\n    if a >= b:\n        return 1\n    factorial = 1\n    for i in range(1, b + 1):\n        factorial *= i\n    last_digit = factorial % 10\n    return last_digit"
+    },
+    {
+      "task_id": "mbpp/48",
+      "passed": false,
+      "code": "def odd_bit_set_number(n):\n    return n | 0x5555555555555555"
+    },
+    {
+      "task_id": "mbpp/49",
+      "passed": true,
+      "code": "def specified_element(lst, index=0):\n    return [sublist[index] for sublist in lst]"
+    },
+    {
+      "task_id": "mbpp/50",
+      "passed": false,
+      "code": "def min_length_list(lst):\n    return min(lst, key=lambda x: (len(x), x))"
+    },
+    {
+      "task_id": "mbpp/51",
+      "passed": true,
+      "code": "def check_equilateral(a, b, c):\n    return a == b == c"
+    },
+    {
+      "task_id": "mbpp/52",
+      "passed": true,
+      "code": "def parallelogram_area(base, height):\n    return base * height"
+    },
+    {
+      "task_id": "mbpp/53",
+      "passed": true,
+      "code": "def check_Equality(s):\n    return \"Equal\" if s[0] == s[-1] else \"Not Equal\""
+    },
+    {
+      "task_id": "mbpp/54",
+      "passed": true,
+      "code": "def counting_sort(arr):\n    if not arr:\n        return arr\n    max_val = max(arr)\n    count = [0] * (max_val + 1)\n    for num in arr:\n        count[num] += 1\n    sorted_arr = []\n    for i in range(len(count)):\n        sorted_arr.extend([i] * count[i])\n    return sorted_arr"
+    },
+    {
+      "task_id": "mbpp/55",
+      "passed": false,
+      "code": "def tn_gp(a, r, n):\n    return a * (r ** (n - 1))"
+    },
+    {
+      "task_id": "mbpp/56",
+      "passed": true,
+      "code": "def check(n):\n    return 2 * int(str(n)[::-1]) - 1 == n"
+    },
+    {
+      "task_id": "mbpp/57",
+      "passed": true,
+      "code": "def find_Max_Num(digits, k):\n    digits = sorted(digits, reverse=True)\n    result = []\n    for i in range(k):\n        result.append(str(digits[i]))\n    return int(''.join(result))"
+    },
+    {
+      "task_id": "mbpp/58",
+      "passed": true,
+      "code": "def opposite_Signs(a, b):\n    return (a > 0 and b < 0) or (a < 0 and b > 0)"
+    },
+    {
+      "task_id": "mbpp/59",
+      "passed": true,
+      "code": "def is_octagonal(n):\n    return n * (3 * n - 2)"
+    },
+    {
+      "task_id": "mbpp/60",
+      "passed": false,
+      "code": "def max_len_sub(arr, k):\n    dp = {}\n    for i in range(len(arr)):\n        for j in range(i+1, len(arr)):\n            if abs(arr[i] - arr[j]) <= k:\n                dp[j] = dp.get(i, 0) + 1\n    return max(dp.values()) if dp else 0"
+    },
+    {
+      "task_id": "mbpp/61",
+      "passed": true,
+      "code": "def count_Substrings(s, n):\n    count = 0\n    for i in range(n):\n        current_sum = 0\n        for j in range(i, n):\n            current_sum += int(s[j])\n            if current_sum == j - i + 1:\n                count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/62",
+      "passed": true,
+      "code": "def smallest_num(lst):\n    return min(lst)"
+    },
+    {
+      "task_id": "mbpp/63",
+      "passed": false,
+      "code": "def max_difference(pairs):\n    return max(y - x for x, y in pairs)"
+    },
+    {
+      "task_id": "mbpp/64",
+      "passed": true,
+      "code": "def subject_marks(subjects):\n    return sorted(subjects, key=lambda x: x[1])"
+    },
+    {
+      "task_id": "mbpp/65",
+      "passed": true,
+      "code": "def recursive_list_sum(data_list):\n    total = 0\n    for element in data_list:\n        if isinstance(element, list):\n            total += recursive_list_sum(element)\n        else:\n            total += element\n    return total"
+    },
+    {
+      "task_id": "mbpp/66",
+      "passed": true,
+      "code": "def pos_count(lst):\n    return sum(1 for x in lst if x > 0)"
+    },
+    {
+      "task_id": "mbpp/67",
+      "passed": false,
+      "code": "def bell_number(n):\n    bell = [[0] * (n+1) for _ in range(n+1)]\n    bell[0][0] = 1\n    for i in range(1, n+1):\n        bell[i][0] = 1\n        for j in range(1, i+1):\n            bell[i][j] = bell[i-1][j-1] + bell[i-1][j]\n    return bell[n][n]"
+    },
+    {
+      "task_id": "mbpp/68",
+      "passed": true,
+      "code": "def is_Monotonic(arr):\n    increasing = all(arr[i] <= arr[i+1] for i in range(len(arr)-1))\n    decreasing = all(arr[i] >= arr[i+1] for i in range(len(arr)-1))\n    return increasing or decreasing"
+    },
+    {
+      "task_id": "mbpp/69",
+      "passed": false,
+      "code": "def is_sublist(lst, sublst):\n    return sublst in lst"
+    },
+    {
+      "task_id": "mbpp/70",
+      "passed": false,
+      "code": "def get_equal(tuples_list, length):  \n    return 'All tuples have same length' if all(len(t) == length for t in tuples_list) else 'Not all tuples have same length'"
+    },
+    {
+      "task_id": "mbpp/71",
+      "passed": true,
+      "code": "def comb_sort(arr):\n    n = len(arr)\n    gap = n\n    shrink = 1.3\n    sorted = False\n\n    while not sorted:\n        gap = int(gap // shrink)\n        if gap <= 1:\n            gap = 1\n            sorted = True\n\n        for i in range(n - gap):\n            if arr[i] > arr[i + gap]:\n                arr[i], arr[i + gap] = arr[i + gap], arr[i]\n                sorted = False\n\n    return arr"
+    },
+    {
+      "task_id": "mbpp/72",
+      "passed": true,
+      "code": "def dif_Square(n):\n    if n <= 0:\n        return False\n    for i in range(1, int(n**0.5) + 1):\n        if (i*i - n) % (2*i) == 0:\n            return True\n    return False"
+    },
+    {
+      "task_id": "mbpp/73",
+      "passed": false,
+      "code": "import re\n\ndef multiple_split(s):\n    return re.split(r'[\\s\\n*]+', s)"
+    },
+    {
+      "task_id": "mbpp/74",
+      "passed": false,
+      "code": "def is_samepatterns(arr1, patterns):\n    pattern_map = {}\n    used_patterns = set()\n    for i in range(len(arr1)):\n        item = arr1[i]\n        pattern = patterns[i]\n        if item in pattern_map:\n            if pattern_map[item] != pattern:\n                return False\n        else:\n            if pattern in used_patterns:\n                return False\n            pattern_map[item] = pattern\n            used_patterns.add(pattern)\n    return True"
+    },
+    {
+      "task_id": "mbpp/75",
+      "passed": true,
+      "code": "def find_tuples(tuples_list, k):\n    result = [t for t in tuples_list if all(x % k == 0 for x in t)]\n    return str(result) if result else '[]'"
+    },
+    {
+      "task_id": "mbpp/76",
+      "passed": true,
+      "code": "def count_Squares(m, n):\n    count = 0\n    for i in range(1, min(m, n) + 1):\n        count += (m - i + 1) * (n - i + 1)\n    return count"
+    },
+    {
+      "task_id": "mbpp/77",
+      "passed": false,
+      "code": "def is_Diff(n):\n    even_sum = 0\n    odd_sum = 0\n    for digit in str(n):\n        num = int(digit)\n        if num % 2 == 0:\n            even_sum += num\n        else:\n            odd_sum += num\n    return even_sum != odd_sum"
+    },
+    {
+      "task_id": "mbpp/78",
+      "passed": true,
+      "code": "def count_With_Odd_SetBits(n):\n    count = 0\n    for i in range(n):\n        if bin(i).count('1') % 2 == 1:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/79",
+      "passed": false,
+      "code": "def word_len(word):\n    return len(word) % 2 == 0"
+    },
+    {
+      "task_id": "mbpp/80",
+      "passed": true,
+      "code": "def tetrahedral_number(n):\n    return n * (n + 1) * (n + 2) / 6"
+    },
+    {
+      "task_id": "mbpp/81",
+      "passed": false,
+      "code": "def zip_tuples(tuple1, tuple2):\n    return list(zip(tuple1, tuple2))"
+    },
+    {
+      "task_id": "mbpp/82",
+      "passed": true,
+      "code": "def volume_sphere(r):\n    return (4/3) * 3.141592653589793 * r**3"
+    },
+    {
+      "task_id": "mbpp/83",
+      "passed": false,
+      "code": "def get_Char(s):\n    return chr(sum(ord(c) for c in s))"
+    },
+    {
+      "task_id": "mbpp/84",
+      "passed": false,
+      "code": "def sequence(n):\n    if n == 1:\n        return 1\n    elif n == 2:\n        return 1\n    a, b = 1, 1\n    for _ in range(3, n + 1):\n        a, b = b, a + b\n    return b"
+    },
+    {
+      "task_id": "mbpp/85",
+      "passed": true,
+      "code": "import math\n\ndef surfacearea_sphere(radius):\n    return 4 * math.pi * radius ** 2"
+    },
+    {
+      "task_id": "mbpp/86",
+      "passed": true,
+      "code": "def centered_hexagonal_number(n):\n    return 3 * n * (n - 1) + 1"
+    },
+    {
+      "task_id": "mbpp/87",
+      "passed": false,
+      "code": "def merge_dictionaries_three(d1, d2, d3): return {**d1, **d2, **d3}"
+    },
+    {
+      "task_id": "mbpp/88",
+      "passed": true,
+      "code": "from collections import Counter\n\ndef freq_count(lst):\n    return dict(Counter(lst))"
+    },
+    {
+      "task_id": "mbpp/89",
+      "passed": true,
+      "code": "def closest_num(n):\n    return n - 1"
+    },
+    {
+      "task_id": "mbpp/90",
+      "passed": true,
+      "code": "def len_log(words):\n    return max(len(word) for word in words) if words else 0"
+    },
+    {
+      "task_id": "mbpp/91",
+      "passed": true,
+      "code": "def find_substring(strings, substring):\n    return any(substring in s for s in strings)"
+    },
+    {
+      "task_id": "mbpp/92",
+      "passed": false,
+      "code": "def is_undulating(n):\n    n = str(n)\n    if len(n) < 3:\n        return False\n    for i in range(2, len(n)):\n        if (n[i-2] == n[i-1] and n[i-1] != n[i]) or (n[i-2] != n[i-1] and n[i-1] == n[i]):\n            continue\n        return False\n    return True"
+    },
+    {
+      "task_id": "mbpp/93",
+      "passed": true,
+      "code": "def power(a, b):\n    return a ** b"
+    },
+    {
+      "task_id": "mbpp/94",
+      "passed": true,
+      "code": "def index_minimum(records):\n    return min(records, key=lambda x: x[1])[0]"
+    },
+    {
+      "task_id": "mbpp/95",
+      "passed": true,
+      "code": "def Find_Min_Length(list_of_lists):\n    return min(len(sublist) for sublist in list_of_lists) if list_of_lists else 0"
+    },
+    {
+      "task_id": "mbpp/96",
+      "passed": true,
+      "code": "def divisor(n):\n    count = 0\n    for i in range(1, abs(n) + 1):\n        if n % i == 0:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/97",
+      "passed": true,
+      "code": "from collections import defaultdict\n\ndef frequency_lists(lists):\n    freq = defaultdict(int)\n    for sublist in lists:\n        for num in sublist:\n            freq[num] += 1\n    return dict(freq)"
+    },
+    {
+      "task_id": "mbpp/98",
+      "passed": true,
+      "code": "def multiply_num(numbers):\n    product = 1\n    for num in numbers:\n        product *= num\n    return product / len(numbers)"
+    },
+    {
+      "task_id": "mbpp/99",
+      "passed": true,
+      "code": "def decimal_to_binary(n):\n    return bin(n)[2:]"
+    },
+    {
+      "task_id": "mbpp/100",
+      "passed": true,
+      "code": "def next_smallest_palindrome(n):\n    n += 1\n    while True:\n        if str(n) == str(n)[::-1]:\n            return n\n        n += 1"
+    },
+    {
+      "task_id": "mbpp/101",
+      "passed": false,
+      "code": "def kth_element(arr, n, k):\n    arr.sort()\n    return arr[k-1]"
+    },
+    {
+      "task_id": "mbpp/102",
+      "passed": true,
+      "code": "def snake_to_camel(s):\n    return s.title().replace('_', '')"
+    },
+    {
+      "task_id": "mbpp/103",
+      "passed": true,
+      "code": "def eulerian_num(n, m):\n    if m == 0:\n        return 1\n    if m >= n:\n        return 0\n    return (n - m) * eulerian_num(n - 1, m - 1) + (m + 1) * eulerian_num(n - 1, m)"
+    },
+    {
+      "task_id": "mbpp/104",
+      "passed": true,
+      "code": "def sort_sublists(lst):\n    return list(map(lambda x: sorted(x), lst))"
+    },
+    {
+      "task_id": "mbpp/105",
+      "passed": true,
+      "code": "def count(lst):\n    return sum(1 for x in lst if x)"
+    },
+    {
+      "task_id": "mbpp/106",
+      "passed": true,
+      "code": "def add_lists(lst, tpl):\n    return tpl + tuple(lst)"
+    },
+    {
+      "task_id": "mbpp/107",
+      "passed": false,
+      "code": "def count_Hexadecimal(start, end):\n    count = 0\n    for num in range(start, end + 1):\n        if all(c in '0123456789abcdef' for c in hex(num)[2:]):\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/108",
+      "passed": false,
+      "code": "import heapq\n\ndef merge_sorted_list(*lists):\n    return list(heapq.merge(*lists))"
+    },
+    {
+      "task_id": "mbpp/109",
+      "passed": true,
+      "code": "def odd_Equivalent(s, n):\n    count = 0\n    for i in range(n):\n        rotated = s[i:] + s[:i]\n        if int(rotated, 2) % 2 == 1:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/110",
+      "passed": false,
+      "code": "def extract_missing(ranges, start, end):\n    missing = []\n    current = start\n    for s, e in ranges:\n        if current < s:\n            missing.append((current, s - 1))\n        current = max(current, e + 1)\n    if current <= end:\n        missing.append((current, end))\n    return missing"
+    },
+    {
+      "task_id": "mbpp/111",
+      "passed": false,
+      "code": "def common_in_nested_lists(nested_lists):\n    common = set(nested_lists[0])\n    for lst in nested_lists[1:]:\n        common.intersection_update(lst)\n    return sorted(common)"
+    },
+    {
+      "task_id": "mbpp/112",
+      "passed": false,
+      "code": "def perimeter(diameter, height):\n    return 2 * 3.14159 * diameter + 2 * height"
+    },
+    {
+      "task_id": "mbpp/113",
+      "passed": true,
+      "code": "def check_integer(s):\n    return s.isdigit() or (s[0] == '-' and s[1:].isdigit())"
+    },
+    {
+      "task_id": "mbpp/114",
+      "passed": true,
+      "code": "def assign_freq(tuples_list):\n    from collections import defaultdict\n    freq = defaultdict(int)\n    for t in tuples_list:\n        freq[t] += 1\n    result = []\n    for key, value in freq.items():\n        result.append(key + (value,))\n    return str(result)"
+    },
+    {
+      "task_id": "mbpp/115",
+      "passed": false,
+      "code": "def empty_dict(list_of_dicts):\n    return all(not d for d in list_of_dicts)"
+    },
+    {
+      "task_id": "mbpp/116",
+      "passed": true,
+      "code": "def tuple_to_int(t):\n    return int(''.join(map(str, t)))"
+    },
+    {
+      "task_id": "mbpp/117",
+      "passed": false,
+      "code": "def list_to_float(lst):\n    return [(float(x), float(y)) for x, y in lst]"
+    },
+    {
+      "task_id": "mbpp/118",
+      "passed": true,
+      "code": "def string_to_list(s):\n    return s.split()"
+    },
+    {
+      "task_id": "mbpp/119",
+      "passed": true,
+      "code": "def search(arr, n):\n    for i in range(0, n, 2):\n        if i + 1 >= n or arr[i] != arr[i + 1]:\n            return arr[i]\n    return arr[-1]"
+    },
+    {
+      "task_id": "mbpp/120",
+      "passed": true,
+      "code": "def max_product_tuple(tuples_list):\n    return max(a * b for a, b in tuples_list)"
+    },
+    {
+      "task_id": "mbpp/121",
+      "passed": false,
+      "code": "def check_triplet(arr, target_sum, index1, index2):\n    target = target_sum - arr[index1] - arr[index2]\n    return target in arr[index1+1:index2] + arr[index2+1:]"
+    },
+    {
+      "task_id": "mbpp/122",
+      "passed": false,
+      "code": "def smartNumber(n):\n    from math import gcd\n    def is_smart(x):\n        return all(x % i != 0 for i in range(2, int(x**0.5) + 1)) and all(gcd(x, i) == 1 for i in range(2, x))\n    count = 0\n    x = 2\n    while True:\n        if is_smart(x):\n            count += 1\n            if count == n:\n                return x\n        x += 1"
+    },
+    {
+      "task_id": "mbpp/123",
+      "passed": true,
+      "code": "def amicable_numbers_sum(n):\n    def sum_divisors(x):\n        return sum(i for i in range(1, x) if x % i == 0)\n    \n    total = 0\n    for i in range(2, n + 1):\n        j = sum_divisors(i)\n        if j != i and sum_divisors(j) == i:\n            total += i\n    return total"
+    },
+    {
+      "task_id": "mbpp/124",
+      "passed": false,
+      "code": "import math\n\ndef angle_complex(real, imag):\n    return math.atan2(imag, real)"
+    },
+    {
+      "task_id": "mbpp/125",
+      "passed": false,
+      "code": "def find_length(s, n):\n    max_diff = 0\n    current_diff = 0\n    for i in range(n):\n        if s[i] == '0':\n            current_diff += 1\n        else:\n            current_diff -= 1\n        max_diff = max(max_diff, current_diff)\n    return max_diff"
+    },
+    {
+      "task_id": "mbpp/126",
+      "passed": false,
+      "code": "def sum(a, b):\n    def gcd(x, y):\n        while y:\n            x, y = y, x % y\n        return x\n    common_divisors = set()\n    for i in range(1, gcd(a, b) + 1):\n        if a % i == 0 and b % i == 0:\n            common_divisors.add(i)\n    return sum(common_divisors)"
+    },
+    {
+      "task_id": "mbpp/127",
+      "passed": true,
+      "code": "def multiply_int(a, b):\n    result = 0\n    for _ in range(abs(b)):\n        result += a\n    return result if b > 0 else -result"
+    },
+    {
+      "task_id": "mbpp/128",
+      "passed": true,
+      "code": "def long_words(n, words):\n    return [word for word in words.split() if len(word) > n]"
+    },
+    {
+      "task_id": "mbpp/129",
+      "passed": true,
+      "code": "def magic_square_test(square):\n    n = len(square)\n    magic_sum = n * (n**2 + 1) // 2\n    for row in square:\n        if sum(row) != magic_sum:\n            return False\n    for col in range(n):\n        if sum(square[row][col] for row in range(n)) != magic_sum:\n            return False\n    if sum(square[i][n-1-i] for i in range(n)) != magic_sum:\n        return False\n    if sum(square[i][i] for i in range(n)) != magic_sum:\n        return False\n    return True"
+    },
+    {
+      "task_id": "mbpp/130",
+      "passed": false,
+      "code": "from collections import Counter\n\ndef max_occurrences(lst):\n    count = Counter(lst)\n    max_freq = max(count.values())\n    return max(count.items(), key=lambda x: x[1]) if max_freq == 1 else next(item for item, freq in count.items() if freq == max_freq)"
+    },
+    {
+      "task_id": "mbpp/131",
+      "passed": true,
+      "code": "def reverse_vowels(s):\n    vowels = set('aeiouAEIOU')\n    s_list = list(s)\n    left, right = 0, len(s) - 1\n    while left < right:\n        if s_list[left] in vowels and s_list[right] in vowels:\n            s_list[left], s_list[right] = s_list[right], s_list[left]\n            left += 1\n            right -= 1\n        elif s_list[left] in vowels:\n            right -= 1\n        else:\n            left += 1\n    return ''.join(s_list)"
+    },
+    {
+      "task_id": "mbpp/132",
+      "passed": true,
+      "code": "def tup_string(tup):\n    return ''.join(tup)"
+    },
+    {
+      "task_id": "mbpp/133",
+      "passed": true,
+      "code": "sum_negativenum = lambda lst: sum(filter(lambda x: x < 0, lst))"
+    },
+    {
+      "task_id": "mbpp/134",
+      "passed": false,
+      "code": "def check_last(arr, p, operation):\n    if operation == 1:\n        arr.append(arr[-1] + 1)\n    else:\n        arr.append(arr[-1] - 1)\n    return \"EVEN\" if arr[-1] % 2 == 0 else \"ODD\""
+    },
+    {
+      "task_id": "mbpp/135",
+      "passed": true,
+      "code": "def hexagonal_num(n):\n    return n * (2 * n - 1)"
+    },
+    {
+      "task_id": "mbpp/136",
+      "passed": false,
+      "code": "def cal_electbill(units):\n    if units <= 100:\n        return units * 2.50\n    elif units <= 200:\n        return 100 * 2.50 + (units - 100) * 3.00\n    else:\n        return 100 * 2.50 + 100 * 3.00 + (units - 200) * 5.00"
+    },
+    {
+      "task_id": "mbpp/137",
+      "passed": false,
+      "code": "def zero_count(arr):\n    return arr.count(0) / len(arr) if arr else 0.0"
+    },
+    {
+      "task_id": "mbpp/138",
+      "passed": false,
+      "code": "def is_Sum_Of_Powers_Of_Two(n):\n    return (n & (n - 1)) == 0"
+    },
+    {
+      "task_id": "mbpp/139",
+      "passed": false,
+      "code": "import math\n\ndef circle_circumference(radius):\n    return 2 * math.pi * radius"
+    },
+    {
+      "task_id": "mbpp/140",
+      "passed": false,
+      "code": "def extract_singly(tuples):\n    from collections import Counter\n    flat = []\n    for t in tuples:\n        flat.extend(t)\n    counts = Counter(flat)\n    return [item for item in flat if counts[item] == 1]"
+    },
+    {
+      "task_id": "mbpp/141",
+      "passed": true,
+      "code": "def pancake_sort(arr):\n    n = len(arr)\n    for i in range(n, 0, -1):\n        max_idx = arr.index(max(arr[:i]))\n        if max_idx != i - 1:\n            if max_idx != 0:\n                arr[:max_idx+1] = arr[:max_idx+1][::-1]\n            arr[:i] = arr[:i][::-1]\n    return arr"
+    },
+    {
+      "task_id": "mbpp/142",
+      "passed": false,
+      "code": "def count_samepair(list1, list2, list3):\n    count = 0\n    for i in list1:\n        if i in list2 and i in list3:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/143",
+      "passed": false,
+      "code": "def find_lists(t):\n    return sum(1 for x in t if isinstance(x, list))"
+    },
+    {
+      "task_id": "mbpp/144",
+      "passed": false,
+      "code": "def sum_Pairs(arr, k):\n    total = 0\n    for i in range(len(arr)):\n        for j in range(i + 1, len(arr)):\n            if abs(arr[i] - arr[j]) == k:\n                total += abs(arr[i] - arr[j])\n    return total"
+    },
+    {
+      "task_id": "mbpp/145",
+      "passed": false,
+      "code": "def max_Abs_Diff(arr, n):\n    min_val = arr[0]\n    max_diff = 0\n    for i in range(1, n):\n        max_diff = max(max_diff, arr[i] - min_val)\n        min_val = min(min_val, arr[i])\n    return max_diff"
+    },
+    {
+      "task_id": "mbpp/146",
+      "passed": false,
+      "code": "def ascii_value_string(s):\n    return sum(ord(char) for char in s)"
+    },
+    {
+      "task_id": "mbpp/147",
+      "passed": false,
+      "code": "def max_path_sum(triangle, rows, cols):\n    for i in range(rows - 2, -1, -1):\n        for j in range(cols):\n            triangle[i][j] += max(triangle[i + 1][j], triangle[i + 1][j + 1])\n    return triangle[0][0]"
+    },
+    {
+      "task_id": "mbpp/148",
+      "passed": false,
+      "code": "def sum_digits_twoparts(n):\n    max_sum = 0\n    i = 1\n    while n // i > 0:\n        part1 = n // i\n        part2 = n % i\n        current_sum = sum(int(d) for d in str(part1)) + sum(int(d) for d in str(part2))\n        max_sum = max(max_sum, current_sum)\n        i *= 10\n    return max_sum"
+    },
+    {
+      "task_id": "mbpp/149",
+      "passed": true,
+      "code": "def longest_subseq_with_diff_one(arr, n):\n    dp = [1] * n\n    for i in range(n):\n        for j in range(i):\n            if abs(arr[i] - arr[j]) == 1:\n                dp[i] = max(dp[i], dp[j] + 1)\n    return max(dp)"
+    },
+    {
+      "task_id": "mbpp/150",
+      "passed": false,
+      "code": "def does_Contain_B(n, a, b):\n    while n > 0:\n        if n % a == 0 or n % b == 0:\n            return True\n        n = n // a + n // b\n    return False"
+    },
+    {
+      "task_id": "mbpp/151",
+      "passed": true,
+      "code": "import math\n\ndef is_coprime(a, b):\n    return math.gcd(a, b) == 1"
+    },
+    {
+      "task_id": "mbpp/152",
+      "passed": true,
+      "code": "def merge_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n    right = merge_sort(arr[mid:])\n    return merge(left, right)\n\ndef merge(left, right):\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] < right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    ret"
+    },
+    {
+      "task_id": "mbpp/153",
+      "passed": true,
+      "code": "def parabola_vertex(a, b, c):\n    x = -b / (2 * a)\n    y = c - (b**2) / (4 * a)\n    return (x, y)"
+    },
+    {
+      "task_id": "mbpp/154",
+      "passed": true,
+      "code": "def specified_element(lst, index):\n    return [row[index] for row in lst]"
+    },
+    {
+      "task_id": "mbpp/155",
+      "passed": false,
+      "code": "def even_bit_toggle_number(n):\n    return n ^ (0xAAAAAAAA)"
+    },
+    {
+      "task_id": "mbpp/156",
+      "passed": true,
+      "code": "def tuple_int_str(input_tuple):\n    return tuple(tuple(int(item) for item in sub_tuple) for sub_tuple in input_tuple)"
+    },
+    {
+      "task_id": "mbpp/157",
+      "passed": true,
+      "code": "def encode_list(lst):\n    if not lst:\n        return []\n    result = []\n    count = 1\n    for i in range(1, len(lst)):\n        if lst[i] == lst[i-1]:\n            count += 1\n        else:\n            result.append([count, lst[i-1]])\n            count = 1\n    result.append([count, lst[-1]])\n    return result"
+    },
+    {
+      "task_id": "mbpp/158",
+      "passed": false,
+      "code": "def min_Ops(arr, k, target):  \n    return sum(abs(x - target) for x in arr) // k"
+    },
+    {
+      "task_id": "mbpp/159",
+      "passed": false,
+      "code": "def month_season(month, day):\n    if month in ['December', 'January', 'February']:\n        return ('winter')\n    elif month in ['March', 'April', 'May']:\n        return ('spring')\n    elif month in ['June', 'July', 'August']:\n        return ('summer')\n    else:\n        return ('fall')"
+    },
+    {
+      "task_id": "mbpp/160",
+      "passed": false,
+      "code": "def solution(a, b, n):\n    for x in range(n + 1):\n        if (n - a * x) % b == 0 and (n - a * x) // b >= 0:\n            y = (n - a * x) // b\n            return ('x = ', x, ', y = ', y)\n    return None"
+    },
+    {
+      "task_id": "mbpp/161",
+      "passed": true,
+      "code": "def remove_elements(lst, to_remove):\n    return [x for x in lst if x not in to_remove]"
+    },
+    {
+      "task_id": "mbpp/162",
+      "passed": true,
+      "code": "def sum_series(n):\n    total = 0\n    while n > 0:\n        total += n\n        n -= 2\n    return total"
+    },
+    {
+      "task_id": "mbpp/163",
+      "passed": true,
+      "code": "import math\n\ndef area_polygon(sides, length):\n    return (sides * length**2) / (4 * math.tan(math.pi / sides))"
+    },
+    {
+      "task_id": "mbpp/164",
+      "passed": true,
+      "code": "def areEquivalent(a, b):\n    def sum_divisors(n):\n        return sum(i for i in range(1, n) if n % i == 0)\n    return sum_divisors(a) == sum_divisors(b)"
+    },
+    {
+      "task_id": "mbpp/165",
+      "passed": true,
+      "code": "def count_char_position(s):\n    count = 0\n    for i, char in enumerate(s):\n        if 'a' <= char.lower() <= 'z':\n            if ord(char.lower()) - ord('a') == i:\n                count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/166",
+      "passed": true,
+      "code": "def find_even_Pair(arr, k):\n    count = 0\n    for i in range(k):\n        for j in range(i + 1, k):\n            if (arr[i] ^ arr[j]) % 2 == 0:\n                count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/167",
+      "passed": true,
+      "code": "def next_Power_Of_2(n):\n    if n == 0:\n        return 1\n    return 1 << (n - 1).bit_length()"
+    },
+    {
+      "task_id": "mbpp/168",
+      "passed": true,
+      "code": "def frequency(arr, num):\n    return arr.count(num)"
+    },
+    {
+      "task_id": "mbpp/169",
+      "passed": true,
+      "code": "def get_pell(n):\n    if n == 0:\n        return 0\n    elif n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, 2 * b + a\n    return b"
+    },
+    {
+      "task_id": "mbpp/170",
+      "passed": true,
+      "code": "def sum_range_list(lst, start, end):\n    return sum(lst[start:end+1])"
+    },
+    {
+      "task_id": "mbpp/171",
+      "passed": true,
+      "code": "def perimeter_pentagon(side_length):\n    return 5 * side_length"
+    },
+    {
+      "task_id": "mbpp/172",
+      "passed": true,
+      "code": "def count_occurance(s):\n    return s.count('std')"
+    },
+    {
+      "task_id": "mbpp/173",
+      "passed": true,
+      "code": "import re\n\ndef remove_splchar(s):\n    return re.sub(r'[^a-zA-Z0-9]', '', s)"
+    },
+    {
+      "task_id": "mbpp/174",
+      "passed": true,
+      "code": "def group_keyvalue(pairs):\n    result = {}\n    for key, value in pairs:\n        if key not in result:\n            result[key] = []\n        result[key].append(value)\n    return result"
+    },
+    {
+      "task_id": "mbpp/175",
+      "passed": true,
+      "code": "def is_valid_parenthese(s):\n    stack = []\n    mapping = {')': '(', '}': '{', ']': '['}\n    for char in s:\n        if char in mapping:\n            top_element = stack.pop() if stack else '#'\n            if mapping[char] != top_element:\n                return False\n        else:\n            stack.append(char)\n    return not stack"
+    },
+    {
+      "task_id": "mbpp/176",
+      "passed": true,
+      "code": "def perimeter_triangle(a, b, c):\n    return a + b + c"
+    },
+    {
+      "task_id": "mbpp/177",
+      "passed": false,
+      "code": "def answer(low, high):\n    for i in range(low, high + 1):\n        for j in range(i + 1, high + 1):\n            if (i * j) // gcd(i, j) >= low and (i * j) // gcd(i, j) <= high:\n                return (i, j)\n    return None"
+    },
+    {
+      "task_id": "mbpp/178",
+      "passed": true,
+      "code": "def string_literals(patterns, text):\n    for p in patterns:\n        if p in text:\n            return ('Matched!')\n    return ('Not Matched!')"
+    },
+    {
+      "task_id": "mbpp/179",
+      "passed": true,
+      "code": "def is_num_keith(n):\n    if n < 2:\n        return False\n    digits = list(map(int, str(n)))\n    length = len(digits)\n    seq = digits[:]\n    while seq[-1] < n:\n        next_val = sum(seq[-length:])\n        seq.append(next_val)\n    return seq[-1] == n"
+    },
+    {
+      "task_id": "mbpp/180",
+      "passed": false,
+      "code": "import math\n\ndef distance_lat_long(lat1, lon1, lat2, lon2):\n    R = 6371.0  # Radius of the Earth in kilometers\n    dlat = math.radians(lat2 - lat1)\n    dlon = math.radians(lon2 - lon1)\n    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2\n    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))\n    distance = R * c\n    return round(distance, 10)"
+    },
+    {
+      "task_id": "mbpp/181",
+      "passed": true,
+      "code": "def common_prefix(strings, n):\n    if not strings:\n        return \"\"\n    prefix = strings[0]\n    for i in range(1, n):\n        while strings[i].find(prefix) != 0:\n            prefix = prefix[:-1]\n            if not prefix:\n                return \"\"\n    return prefix"
+    },
+    {
+      "task_id": "mbpp/182",
+      "passed": false,
+      "code": "import re\n\ndef find_character(s):\n    uppercase = re.findall(r'[A-Z]', s)\n    lowercase = re.findall(r'[a-z]', s)\n    special = re.findall(r'[^A-Za-z0-9]', s)\n    numeric = re.findall(r'\\d', s)\n    return (uppercase, lowercase, special, numeric)"
+    },
+    {
+      "task_id": "mbpp/183",
+      "passed": false,
+      "code": "def count_pairs(arr, k):\n    seen = set()\n    count = 0\n    for num in arr:\n        if num - k in seen:\n            count += 1\n        if num + k in seen:\n            count += 1\n        seen.add(num)\n    return count"
+    },
+    {
+      "task_id": "mbpp/184",
+      "passed": true,
+      "code": "def greater_specificnum(lst, num):\n    return all(x > num for x in lst)"
+    },
+    {
+      "task_id": "mbpp/185",
+      "passed": false,
+      "code": "def parabola_focus(a, b, c):\n    h = -b / (2 * a)\n    k = c - (b**2 / (4 * a)) + (b**2 / (4 * a**2)) * a\n    return (h, k)"
+    },
+    {
+      "task_id": "mbpp/186",
+      "passed": true,
+      "code": "import re\n\ndef check_literals(text, literals):\n    pattern = re.compile(r'\\b(?:' + '|'.join(map(re.escape, literals)) + r')\\b')\n    if pattern.search(text):\n        return 'Matched!'\n    else:\n        return 'Not Matched!'"
+    },
+    {
+      "task_id": "mbpp/187",
+      "passed": true,
+      "code": "def longest_common_subsequence(s1, s2, len1, len2):\n    dp = [[0] * (len2 + 1) for _ in range(len1 + 1)]\n    for i in range(1, len1 + 1):\n        for j in range(1, len2 + 1):\n            if s1[i-1] == s2[j-1]:\n                dp[i][j] = dp[i-1][j-1] + 1\n            else:\n                dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n    return dp[len1][len2]"
+    },
+    {
+      "task_id": "mbpp/188",
+      "passed": false,
+      "code": "def prod_Square(n):\n    for i in range(1, int(n**0.5) + 1):\n        if n % i == 0:\n            j = n // i\n            if int(i**0.5)**2 == i and int(j**0.5)**2 == j:\n                return True\n    return False"
+    },
+    {
+      "task_id": "mbpp/189",
+      "passed": false,
+      "code": "def first_Missing_Positive(nums, n):\n    for i in range(n):\n        if 1 <= nums[i] <= n:\n            while 1 <= nums[nums[i]-1] <= n:\n                nums[nums[i]-1], nums[i] = nums[i], nums[nums[i]-1]\n    for i in range(n):\n        if nums[i] != i+1:\n            return i+1\n    return n + 1"
+    },
+    {
+      "task_id": "mbpp/190",
+      "passed": false,
+      "code": "def count_Intgral_Points(x1, y1, x2, y2):\n    return (x2 - x1) * (y2 - y1)"
+    },
+    {
+      "task_id": "mbpp/191",
+      "passed": true,
+      "code": "def check_monthnumber(month_name):\n    months_with_30_days = [\"April\", \"June\", \"September\", \"November\"]\n    return month_name in months_with_30_days"
+    },
+    {
+      "task_id": "mbpp/192",
+      "passed": true,
+      "code": "def check_String(s):\n    has_letter = any(c.isalpha() for c in s)\n    has_number = any(c.isdigit() for c in s)\n    return has_letter and has_number"
+    },
+    {
+      "task_id": "mbpp/193",
+      "passed": false,
+      "code": "def remove_tuple(t):\n    return tuple(sorted(set(t), key=t.index))"
+    },
+    {
+      "task_id": "mbpp/194",
+      "passed": true,
+      "code": "def octal_To_Decimal(n):\n    return int(str(n), 8)"
+    },
+    {
+      "task_id": "mbpp/195",
+      "passed": false,
+      "code": "def first(arr, target, index):\n    while index > 0 and arr[index - 1] == target:\n        index -= 1\n    return index"
+    },
+    {
+      "task_id": "mbpp/196",
+      "passed": true,
+      "code": "def remove_tuples(tuples_list, k):\n    return [t for t in tuples_list if len(t) != k]"
+    },
+    {
+      "task_id": "mbpp/197",
+      "passed": true,
+      "code": "def find_exponentio(base, exponent):\n    return tuple(base[i] ** exponent[i] for i in range(len(base)))"
+    },
+    {
+      "task_id": "mbpp/198",
+      "passed": false,
+      "code": "import math\n\ndef largest_triangle(a, b):\n    return (3 * math.sqrt(3) * a * b) / 2"
+    },
+    {
+      "task_id": "mbpp/199",
+      "passed": false,
+      "code": "def highest_Power_of_2(n):\n    return 1 << (n - 1).bit_length()"
+    },
+    {
+      "task_id": "mbpp/200",
+      "passed": true,
+      "code": "def position_max(lst):\n    max_val = max(lst)\n    return [i for i, x in enumerate(lst) if x == max_val]"
+    },
+    {
+      "task_id": "mbpp/201",
+      "passed": true,
+      "code": "def chkList(lst):\n    return all(x == lst[0] for x in lst)"
+    },
+    {
+      "task_id": "mbpp/202",
+      "passed": true,
+      "code": "def remove_even(s):\n    return s[::2]"
+    },
+    {
+      "task_id": "mbpp/203",
+      "passed": true,
+      "code": "def hamming_Distance(x, y):\n    return bin(x ^ y).count('1')"
+    },
+    {
+      "task_id": "mbpp/204",
+      "passed": true,
+      "code": "def count(s, char):\n    return s.count(char)"
+    },
+    {
+      "task_id": "mbpp/205",
+      "passed": false,
+      "code": "def inversion_elements(t):\n    return tuple(-x for x in t)"
+    },
+    {
+      "task_id": "mbpp/206",
+      "passed": false,
+      "code": "def concatenate_elements(tuples):\n    return tuple((tuples[i], tuples[i+1]) for i in range(len(tuples)-1))"
+    },
+    {
+      "task_id": "mbpp/207",
+      "passed": true,
+      "code": "def find_longest_repeating_subseq(s):\n    n = len(s)\n    dp = [[0] * (n + 1) for _ in range(n + 1)]\n    \n    for i in range(1, n + 1):\n        for j in range(1, n + 1):\n            if s[i-1] == s[j-1] and i != j:\n                dp[i][j] = dp[i-1][j-1] + 1\n            else:\n                dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n    \n    return dp[n][n]"
+    },
+    {
+      "task_id": "mbpp/208",
+      "passed": true,
+      "code": "import re\n\ndef is_decimal(s):\n    return bool(re.fullmatch(r'\\d+\\.\\d{2}', s))"
+    },
+    {
+      "task_id": "mbpp/209",
+      "passed": false,
+      "code": "import heapq\n\ndef heap_replace(heap, new_item):\n    heapq.heapify(heap)\n    heapq.heappop(heap)\n    heapq.heappush(heap, new_item)\n    return heap"
+    },
+    {
+      "task_id": "mbpp/210",
+      "passed": false,
+      "code": "import re\n\ndef is_allowed_specific_char(s):\n    return re.fullmatch(r'[a-z0-9]+', s) is not None"
+    },
+    {
+      "task_id": "mbpp/211",
+      "passed": false,
+      "code": "def count_Num(n):\n    count = 0\n    for i in range(n + 1):\n        if (i & (1 << 0)) and (i & (1 << n)):\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/212",
+      "passed": true,
+      "code": "def fourth_Power_Sum(n):\n    return sum(i**4 for i in range(1, n+1))"
+    },
+    {
+      "task_id": "mbpp/213",
+      "passed": true,
+      "code": "def concatenate_strings(tuple1, tuple2):\n    return tuple(a + b for a, b in zip(tuple1, tuple2))"
+    },
+    {
+      "task_id": "mbpp/214",
+      "passed": false,
+      "code": "def degree_radian(radians):\n    return radians * 180 / 3.141592653589793"
+    },
+    {
+      "task_id": "mbpp/215",
+      "passed": true,
+      "code": "def decode_list(encoded):\n    result = []\n    for item in encoded:\n        if isinstance(item, list):\n            count, value = item\n            result.extend([value] * count)\n        else:\n            result.append(item)\n    return result"
+    },
+    {
+      "task_id": "mbpp/216",
+      "passed": false,
+      "code": "def check_subset_list(main_list, sub_list):\n    for sublist in sub_list:\n        for item in sublist:\n            if item not in main_list:\n                return False\n    return True"
+    },
+    {
+      "task_id": "mbpp/217",
+      "passed": false,
+      "code": "def first_Repeated_Char(s):\n    seen = set()\n    for char in s:\n        if char in seen:\n            return char\n        seen.add(char)\n    return None"
+    },
+    {
+      "task_id": "mbpp/218",
+      "passed": false,
+      "code": "def min_Operations(a, b):\n    return abs(a - b) // 2"
+    },
+    {
+      "task_id": "mbpp/219",
+      "passed": false,
+      "code": "def extract_min_max(t, k):\n    sorted_t = sorted(t)\n    return tuple(sorted_t[:k] + sorted_t[-k:])"
+    },
+    {
+      "task_id": "mbpp/220",
+      "passed": true,
+      "code": "import re\n\ndef replace_max_specialchar(s, n):\n    pattern = r'[ ,.]'\n    matches = re.finditer(pattern, s)\n    replace_count = 0\n    result = []\n    i = 0\n    while i < len(s):\n        if re.match(pattern, s[i]):\n            if replace_count < n:\n                result.append(':')\n                replace_count += 1\n            else:\n                result.append(s[i])\n        else:\n            result.append(s[i])\n        i += 1\n    return ''.join(result)"
+    },
+    {
+      "task_id": "mbpp/221",
+      "passed": true,
+      "code": "def first_even(numbers):\n    for num in numbers:\n        if num % 2 == 0:\n            return num\n    return None"
+    },
+    {
+      "task_id": "mbpp/222",
+      "passed": true,
+      "code": "def check_type(t):\n    return all(type(x) == type(t[0]) for x in t) if t else True"
+    },
+    {
+      "task_id": "mbpp/223",
+      "passed": true,
+      "code": "def is_majority(arr, n, candidate):\n    count = 0\n    for i in range(n):\n        if arr[i] == candidate:\n            count += 1\n    return count > n // 2"
+    },
+    {
+      "task_id": "mbpp/224",
+      "passed": true,
+      "code": "def count_Set_Bits(n):\n    count = 0\n    while n:\n        count += n & 1\n        n >>= 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/225",
+      "passed": true,
+      "code": "def find_Min(arr, left, right):\n    while left < right:\n        mid = (left + right) // 2\n        if arr[mid] > arr[right]:\n            left = mid + 1\n        else:\n            right = mid\n    return arr[left]"
+    },
+    {
+      "task_id": "mbpp/226",
+      "passed": true,
+      "code": "def odd_values_string(s):\n    return s[::2]"
+    },
+    {
+      "task_id": "mbpp/227",
+      "passed": true,
+      "code": "def min_of_three(a, b, c):\n    return min(a, b, c)"
+    },
+    {
+      "task_id": "mbpp/228",
+      "passed": false,
+      "code": "def all_Bits_Set_In_The_Given_Range(n, l, r):\n    mask = (1 << (r - l + 1)) - 1\n    return (n & mask) == mask"
+    },
+    {
+      "task_id": "mbpp/229",
+      "passed": false,
+      "code": "def re_arrange_array(arr, n):\n    result = []\n    for i in range(n):\n        if arr[i] < 0:\n            result.append(arr[i])\n    for i in range(n):\n        if arr[i] >= 0:\n            result.append(arr[i])\n    return result"
+    },
+    {
+      "task_id": "mbpp/230",
+      "passed": true,
+      "code": "def replace_blank(s, char):\n    return char.join(s.split())"
+    },
+    {
+      "task_id": "mbpp/231",
+      "passed": false,
+      "code": "def max_sum(triangle, n):\n    for i in range(n-1, 0, -1):\n        for j in range(i):\n            triangle[i][j] += max(triangle[i-1][j], triangle[i-1][j+1])\n    return triangle[n-1][0]"
+    },
+    {
+      "task_id": "mbpp/232",
+      "passed": true,
+      "code": "def larg_nnum(dataset, n):\n    return sorted(set(dataset), reverse=True)[:n]"
+    },
+    {
+      "task_id": "mbpp/233",
+      "passed": false,
+      "code": "import math\n\ndef lateralsurface_cylinder(radius, height):\n    return 2 * math.pi * radius * height"
+    },
+    {
+      "task_id": "mbpp/234",
+      "passed": true,
+      "code": "def volume_cube(side):\n    return side ** 3"
+    },
+    {
+      "task_id": "mbpp/235",
+      "passed": false,
+      "code": "def even_bit_set_number(n):\n    return n | 0x55555555"
+    },
+    {
+      "task_id": "mbpp/236",
+      "passed": false,
+      "code": "def No_of_Triangle(n, k):\n    return (n * (n + 1) * (2 * n + 1) // 6) - ((k * (k + 1) * (2 * k + 1) // 6))"
+    },
+    {
+      "task_id": "mbpp/237",
+      "passed": false,
+      "code": "def check_occurences(records):\n    from collections import defaultdict\n    count = defaultdict(int)\n    for i in range(len(records)):\n        if i + 1 < len(records) and records[i][1] == records[i + 1][0]:\n            count[records[i]] += 1\n            count[records[i + 1]] += 1\n    return dict(count)"
+    },
+    {
+      "task_id": "mbpp/238",
+      "passed": true,
+      "code": "def number_of_substrings(s):\n    return len(s) * (len(s) + 1) // 2"
+    },
+    {
+      "task_id": "mbpp/239",
+      "passed": false,
+      "code": "def get_total_number_of_sequences(n, m):\n    dp = [0] * (m + 1)\n    dp[0] = 1\n    for _ in range(n):\n        new_dp = [0] * (m + 1)\n        for i in range(m + 1):\n            for j in range(2 * i, m + 1):\n                new_dp[j] += dp[i]\n        dp = new_dp\n    return dp[m]"
+    },
+    {
+      "task_id": "mbpp/240",
+      "passed": true,
+      "code": "def replace_list(lst, new_elements):\n    lst[-1:] = new_elements\n    return lst"
+    },
+    {
+      "task_id": "mbpp/241",
+      "passed": true,
+      "code": "def array_3d(x, y, z):\n    return [[[ '*' for _ in range(x)] for _ in range(y)] for _ in range(z)]"
+    },
+    {
+      "task_id": "mbpp/242",
+      "passed": true,
+      "code": "def count_charac(s):\n    return len(s)"
+    },
+    {
+      "task_id": "mbpp/243",
+      "passed": false,
+      "code": "def sort_on_occurence(lst):\n    from collections import defaultdict\n    count = defaultdict(int)\n    for item in lst:\n        count[item[0]] += 1\n    return sorted(lst, key=lambda x: (count[x[0]], x[0]))"
+    },
+    {
+      "task_id": "mbpp/244",
+      "passed": true,
+      "code": "import math\n\ndef next_Perfect_Square(n):\n    root = math.isqrt(n)\n    if root * root == n:\n        return (root + 1) ** 2\n    else:\n        return (root + 1) ** 2"
+    },
+    {
+      "task_id": "mbpp/245",
+      "passed": true,
+      "code": "def max_sum(arr, n):\n    if n == 0:\n        return 0\n    inc = [0] * n\n    dec = [0] * n\n    inc[0] = arr[0]\n    dec[n-1] = arr[n-1]\n    for i in range(1, n):\n        inc[i] = arr[i]\n        for j in range(i):\n            if arr[j] < arr[i]:\n                inc[i] = max(inc[i], inc[j] + arr[i])\n    for i in range(n-2, -1, -1):\n        dec[i] = arr[i]\n        for j in range(i+1, n):\n            if arr[j] < arr[i]:\n                dec[i] = max(dec[i], dec[j] + arr[i])\n    max_sum = 0\n    for i in "
+    },
+    {
+      "task_id": "mbpp/246",
+      "passed": true,
+      "code": "def babylonian_squareroot(n):\n    guess = n / 2.0\n    for _ in range(100):\n        guess = (guess + n / guess) / 2\n    return guess"
+    },
+    {
+      "task_id": "mbpp/247",
+      "passed": true,
+      "code": "def lps(s):\n    n = len(s)\n    dp = [[0] * n for _ in range(n)]\n    for i in range(n):\n        dp[i][i] = 1\n    for l in range(2, n + 1):\n        for i in range(n - l + 1):\n            j = i + l - 1\n            if s[i] == s[j]:\n                if l == 2:\n                    dp[i][j] = 2\n                else:\n                    dp[i][j] = dp[i + 1][j - 1] + 2\n            else:\n                dp[i][j] = max(dp[i + 1][j], dp[i][j - 1])\n    return dp[0][n - 1]"
+    },
+    {
+      "task_id": "mbpp/248",
+      "passed": false,
+      "code": "def harmonic_sum(n):\n    return sum(1 / i for i in range(1, n))"
+    },
+    {
+      "task_id": "mbpp/249",
+      "passed": true,
+      "code": "def intersection_array(arr1, arr2):\n    return list(filter(lambda x: x in arr2, arr1))"
+    },
+    {
+      "task_id": "mbpp/250",
+      "passed": true,
+      "code": "def count_X(t, x):\n    return t.count(x)"
+    },
+    {
+      "task_id": "mbpp/251",
+      "passed": false,
+      "code": "def insert_element(lst, element):\n    return [element] + [element] + lst if lst else [element]"
+    },
+    {
+      "task_id": "mbpp/252",
+      "passed": true,
+      "code": "import cmath\n\ndef convert(z):\n    return (abs(z), cmath.phase(z))"
+    },
+    {
+      "task_id": "mbpp/253",
+      "passed": true,
+      "code": "def count_integer(lst):\n    return sum(1 for x in lst if isinstance(x, int))"
+    },
+    {
+      "task_id": "mbpp/254",
+      "passed": false,
+      "code": "import re\n\ndef words_ae(s):\n    return re.findall(r'\\b[ae]\\w+', s)"
+    },
+    {
+      "task_id": "mbpp/255",
+      "passed": true,
+      "code": "from itertools import combinations_with_replacement\n\ndef combinations_colors(colors, k):\n    return list(combinations_with_replacement(colors, k))"
+    },
+    {
+      "task_id": "mbpp/256",
+      "passed": true,
+      "code": "def count_Primes_nums(n):\n    if n <= 2:\n        return 0\n    sieve = [True] * n\n    sieve[0] = sieve[1] = False\n    for i in range(2, int(n ** 0.5) + 1):\n        if sieve[i]:\n            sieve[i*i : n : i] = [False] * len(sieve[i*i : n : i])\n    return sum(sieve)"
+    },
+    {
+      "task_id": "mbpp/257",
+      "passed": true,
+      "code": "def swap_numbers(a, b):\n    return (b, a)"
+    },
+    {
+      "task_id": "mbpp/258",
+      "passed": true,
+      "code": "count_odd = lambda lst: len(list(filter(lambda x: x % 2 != 0, lst)))"
+    },
+    {
+      "task_id": "mbpp/259",
+      "passed": false,
+      "code": "def maximize_elements(tup1, tup2):\n    return tuple(max(pair) for pair in zip(tup1, tup2))"
+    },
+    {
+      "task_id": "mbpp/260",
+      "passed": false,
+      "code": "def newman_prime(n):\n    def is_prime(num):\n        if num < 2:\n            return False\n        for i in range(2, int(num**0.5) + 1):\n            if num % i == 0:\n                return False\n        return True\n\n    def sw_prime(k):\n        return (2 ** (2 ** k) + 1) // 3\n\n    count = 0\n    k = 0\n    while True:\n        p = sw_prime(k)\n        if is_prime(p):\n            count += 1\n            if count == n:\n                return p\n        k += 1"
+    },
+    {
+      "task_id": "mbpp/261",
+      "passed": true,
+      "code": "def division_elements(tup1, tup2):\n    return tuple(a // b for a, b in zip(tup1, tup2))"
+    },
+    {
+      "task_id": "mbpp/262",
+      "passed": true,
+      "code": "def split_two_parts(lst, length):\n    return lst[:length], lst[length:]"
+    },
+    {
+      "task_id": "mbpp/263",
+      "passed": true,
+      "code": "def merge_dict(d1, d2):\n    return {**d1, **d2}"
+    },
+    {
+      "task_id": "mbpp/264",
+      "passed": true,
+      "code": "def dog_age(human_years):\n    if human_years <= 2:\n        return human_years * 10.5\n    else:\n        return 21 + (human_years - 2) * 4"
+    },
+    {
+      "task_id": "mbpp/265",
+      "passed": true,
+      "code": "def list_split(lst, n):\n    return [lst[i::n] for i in range(n)]"
+    },
+    {
+      "task_id": "mbpp/266",
+      "passed": true,
+      "code": "def lateralsurface_cube(side):\n    return 4 * side ** 2"
+    },
+    {
+      "task_id": "mbpp/267",
+      "passed": true,
+      "code": "def square_Sum(n):\n    return n * (2 * n - 1) * (2 * n + 1) // 3"
+    },
+    {
+      "task_id": "mbpp/268",
+      "passed": true,
+      "code": "def find_star_num(n):\n    return 6 * n * (n - 1) + 1"
+    },
+    {
+      "task_id": "mbpp/269",
+      "passed": true,
+      "code": "def ascii_value(char):\n    return ord(char)"
+    },
+    {
+      "task_id": "mbpp/270",
+      "passed": true,
+      "code": "def sum_even_and_even_index(lst, index):\n    return sum(num for i, num in enumerate(lst) if i % 2 == 0 and num % 2 == 0)"
+    },
+    {
+      "task_id": "mbpp/271",
+      "passed": true,
+      "code": "def even_Power_Sum(n):\n    return sum((2 * i) ** 5 for i in range(1, n + 1))"
+    },
+    {
+      "task_id": "mbpp/272",
+      "passed": true,
+      "code": "def rear_extract(records):\n    return [record[-1] for record in records]"
+    },
+    {
+      "task_id": "mbpp/273",
+      "passed": true,
+      "code": "def substract_elements(tuple1, tuple2):\n    return tuple(a - b for a, b in zip(tuple1, tuple2))"
+    },
+    {
+      "task_id": "mbpp/274",
+      "passed": false,
+      "code": "def even_binomial_Coeff_Sum(n):\n    return sum(comb(n, i) for i in range(n+1) if i % 2 == 0)"
+    },
+    {
+      "task_id": "mbpp/275",
+      "passed": false,
+      "code": "def get_Position(arr, k, m):\n    elements = set(arr)\n    removed = set()\n    count = 0\n    index = 0\n    while True:\n        if arr[index] in removed:\n            index += 1\n            continue\n        if count == k:\n            removed.add(arr[index])\n        count = (count + 1) % m\n        index += 1\n        if index == len(arr):\n            break\n    for i in range(len(arr)):\n        if arr[i] in removed:\n            return i\n    return -1"
+    },
+    {
+      "task_id": "mbpp/276",
+      "passed": false,
+      "code": "import math\n\ndef volume_cylinder(radius, height):\n    return math.pi * radius**2 * height"
+    },
+    {
+      "task_id": "mbpp/277",
+      "passed": true,
+      "code": "def dict_filter(d, value):\n    return {k: v for k, v in d.items() if v >= value}"
+    },
+    {
+      "task_id": "mbpp/278",
+      "passed": true,
+      "code": "def count_first_elements(t):\n    count = 0\n    for element in t:\n        if isinstance(element, tuple):\n            break\n        count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/279",
+      "passed": true,
+      "code": "def is_num_decagonal(n):\n    return 4 * n * n - 3 * n"
+    },
+    {
+      "task_id": "mbpp/280",
+      "passed": true,
+      "code": "def sequential_search(arr, target):\n    for i in range(len(arr)):\n        if arr[i] == target:\n            return (True, i)\n    return (False, -1)"
+    },
+    {
+      "task_id": "mbpp/281",
+      "passed": true,
+      "code": "def all_unique(lst):\n    return len(set(lst)) == len(lst)"
+    },
+    {
+      "task_id": "mbpp/282",
+      "passed": true,
+      "code": "def sub_list(list1, list2):\n    return list(map(lambda x, y: x - y, list1, list2))"
+    },
+    {
+      "task_id": "mbpp/283",
+      "passed": true,
+      "code": "def validate(n):\n    digits = str(n)\n    freq = {}\n    for d in digits:\n        freq[d] = freq.get(d, 0) + 1\n    for d, count in freq.items():\n        if int(d) < count:\n            return False\n    return True"
+    },
+    {
+      "task_id": "mbpp/284",
+      "passed": true,
+      "code": "def check_element(lst, string):\n    return all(item == string for item in lst)"
+    },
+    {
+      "task_id": "mbpp/285",
+      "passed": false,
+      "code": "import re\n\ndef text_match_two_three(text):\n    pattern = r'ab{2,3}'\n    if re.fullmatch(pattern, text):\n        return 'Matched!'\n    else:\n        return 'Not matched!'"
+    },
+    {
+      "task_id": "mbpp/286",
+      "passed": false,
+      "code": "def max_sub_array_sum_repeated(arr, k, n):\n    import math\n    max_subarray = float('-inf')\n    total_sum = sum(arr)\n    for i in range(n):\n        current_sum = 0\n        for j in range(k):\n            for num in arr:\n                current_sum += num\n                max_subarray = max(max_subarray, current_sum)\n            if i < n - 1:\n                current_sum += total_sum\n    return max_subarray"
+    },
+    {
+      "task_id": "mbpp/287",
+      "passed": false,
+      "code": "def square_Sum(n):\n    return n * (n + 1) * (2 * n + 1) // 3"
+    },
+    {
+      "task_id": "mbpp/288",
+      "passed": false,
+      "code": "def modular_inverse(arr, p, mod):\n    count = 0\n    for num in arr:\n        if pow(num, mod - 2, mod) == num:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/289",
+      "passed": false,
+      "code": "def odd_Days(year):\n    import calendar\n    return calendar.weekday(year, 1, 1)"
+    },
+    {
+      "task_id": "mbpp/290",
+      "passed": true,
+      "code": "def max_length(lists):\n    max_len = -1\n    max_list = []\n    for lst in lists:\n        if len(lst) > max_len:\n            max_len = len(lst)\n            max_list = lst\n    return (max_len, max_list)"
+    },
+    {
+      "task_id": "mbpp/291",
+      "passed": true,
+      "code": "def count_no_of_ways(n, k):\n    if n == 0:\n        return 0\n    same = k\n    diff = k * (k - 1)\n    for _ in range(2, n):\n        new_same = diff\n        new_diff = (same + diff) * (k - 1)\n        same, diff = new_same, new_diff\n    return same + diff"
+    },
+    {
+      "task_id": "mbpp/292",
+      "passed": true,
+      "code": "def find(a, b):\n    return a // b"
+    },
+    {
+      "task_id": "mbpp/293",
+      "passed": true,
+      "code": "import math\n\ndef otherside_rightangle(a, b):\n    return math.sqrt(a**2 + b**2)"
+    },
+    {
+      "task_id": "mbpp/294",
+      "passed": true,
+      "code": "def max_val(lst):\n    return max(x for x in lst if isinstance(x, (int, float)))"
+    },
+    {
+      "task_id": "mbpp/295",
+      "passed": false,
+      "code": "def sum_div(n):\n    return sum(i for i in range(1, n + 1) if n % i == 0)"
+    },
+    {
+      "task_id": "mbpp/296",
+      "passed": true,
+      "code": "def get_Inv_Count(arr, n):\n    inv_count = 0\n    for i in range(n):\n        for j in range(i+1, n):\n            if arr[i] > arr[j]:\n                inv_count += 1\n    return inv_count"
+    },
+    {
+      "task_id": "mbpp/297",
+      "passed": true,
+      "code": "def flatten_list(nested_list):\n    result = []\n    for item in nested_list:\n        if isinstance(item, list):\n            result.extend(flatten_list(item))\n        else:\n            result.append(item)\n    return result"
+    },
+    {
+      "task_id": "mbpp/298",
+      "passed": false,
+      "code": "def intersection_nested_lists(list1, nested_list):\n    result = []\n    for sublist in nested_list:\n        common = [x for x in sublist if x in list1]\n        if common:\n            result.append(common)\n    return result"
+    },
+    {
+      "task_id": "mbpp/299",
+      "passed": true,
+      "code": "def max_aggregate(data):\n    aggregate = {}\n    for name, score in data:\n        aggregate[name] = aggregate.get(name, 0) + score\n    return max(aggregate.items(), key=lambda x: x[1])"
+    },
+    {
+      "task_id": "mbpp/300",
+      "passed": true,
+      "code": "import math\n\ndef count_binary_seq(n):\n    total = math.comb(2 * n, n)\n    return total"
+    },
+    {
+      "task_id": "mbpp/301",
+      "passed": true,
+      "code": "def dict_depth(d):\n    if not d:\n        return 1\n    max_depth = 1\n    for v in d.values():\n        if isinstance(v, dict):\n            current_depth = dict_depth(v) + 1\n            max_depth = max(max_depth, current_depth)\n    return max_depth"
+    },
+    {
+      "task_id": "mbpp/302",
+      "passed": true,
+      "code": "def set_Bit_Number(n):\n    return 1 << (n.bit_length() - 1)"
+    },
+    {
+      "task_id": "mbpp/303",
+      "passed": false,
+      "code": "def solve(arr, n):\n    inv1 = 0\n    inv2 = 0\n    for i in range(n):\n        for j in range(i+1, n):\n            if arr[i] > arr[j]:\n                inv1 += 1\n            if arr[i] < arr[j]:\n                inv2 += 1\n    return inv1 == inv2"
+    },
+    {
+      "task_id": "mbpp/304",
+      "passed": false,
+      "code": "def find_Element(arr, queries, rotations, index):\n    for rot, i in queries:\n        arr = arr[rot:] + arr[:rot]\n    return arr[index]"
+    },
+    {
+      "task_id": "mbpp/305",
+      "passed": false,
+      "code": "def start_withp(words):\n    result = []\n    for word in words:\n        if word.split()[0].startswith('p'):\n            result.append(word.split()[0])\n    return tuple(result)"
+    },
+    {
+      "task_id": "mbpp/306",
+      "passed": false,
+      "code": "def max_sum_increasing_subseq(arr, i, k, idx):\n    dp = [0] * len(arr)\n    for j in range(len(arr)):\n        dp[j] = arr[j]\n        for l in range(j):\n            if arr[l] < arr[j]:\n                dp[j] = max(dp[j], dp[l] + arr[j])\n    return dp[idx]"
+    },
+    {
+      "task_id": "mbpp/307",
+      "passed": false,
+      "code": "def colon_tuplex(tup, index, value):\n    return tup[:index] + (list(tup[index]) if isinstance(tup[index], list) else [value],) + tup[index+1:]"
+    },
+    {
+      "task_id": "mbpp/308",
+      "passed": true,
+      "code": "def large_product(list1, list2, n):\n    products = []\n    for i in range(len(list1)):\n        for j in range(len(list2)):\n            products.append(list1[i] * list2[j])\n    products.sort(reverse=True)\n    return products[:n]"
+    },
+    {
+      "task_id": "mbpp/309",
+      "passed": true,
+      "code": "def maximum(a, b):\n    return a if a > b else b"
+    },
+    {
+      "task_id": "mbpp/310",
+      "passed": false,
+      "code": "def string_to_tuple(s):\n    return tuple(s)"
+    },
+    {
+      "task_id": "mbpp/311",
+      "passed": false,
+      "code": "def set_left_most_unset_bit(n):\n    return n | (n - 1)"
+    },
+    {
+      "task_id": "mbpp/312",
+      "passed": false,
+      "code": "import math\n\ndef volume_cone(radius, height):\n    return (1/3) * math.pi * radius**2 * height"
+    },
+    {
+      "task_id": "mbpp/313",
+      "passed": false,
+      "code": "def pos_nos(lst):\n    return ','.join(str(x) for x in lst if x > 0)"
+    },
+    {
+      "task_id": "mbpp/314",
+      "passed": false,
+      "code": "def max_sum_rectangular_grid(grid, n):\n    if n == 0:\n        return 0\n    prev1 = max(grid[0][0], grid[1][0])\n    prev2 = grid[0][0] + grid[1][0]\n    for i in range(1, n):\n        curr1 = max(prev1, prev2)\n        curr2 = prev1 + grid[0][i] + grid[1][i]\n        prev1, prev2 = curr1, curr2\n    return max(prev1, prev2)"
+    },
+    {
+      "task_id": "mbpp/315",
+      "passed": false,
+      "code": "def find_Max_Len_Even(s):\n    words = s.split()\n    max_len = 0\n    max_word = \"\"\n    for word in words:\n        if len(word) % 2 == 0 and len(word) > max_len:\n            max_len = len(word)\n            max_word = word\n    return max_word"
+    },
+    {
+      "task_id": "mbpp/316",
+      "passed": true,
+      "code": "def find_last_occurrence(arr, target):\n    left, right = 0, len(arr) - 1\n    result = -1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            result = mid\n            left = mid + 1\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return result"
+    },
+    {
+      "task_id": "mbpp/317",
+      "passed": true,
+      "code": "def modified_encode(arr):\n    result = []\n    i = 0\n    while i < len(arr):\n        count = 1\n        j = i + 1\n        while j < len(arr) and arr[j] == arr[i]:\n            count += 1\n            j += 1\n        if count > 1:\n            result.append([count, arr[i]])\n        else:\n            result.append(arr[i])\n        i = j\n    return result"
+    },
+    {
+      "task_id": "mbpp/318",
+      "passed": true,
+      "code": "def max_volume(s):\n    max_vol = 0\n    for a in range(1, s // 3 + 1):\n        for b in range(a, (s - a) // 2 + 1):\n            c = s - a - b\n            vol = a * b * c\n            if vol > max_vol:\n                max_vol = vol\n    return max_vol"
+    },
+    {
+      "task_id": "mbpp/319",
+      "passed": true,
+      "code": "import re\n\ndef find_long_word(s):\n    return re.findall(r'\\b\\w{5}\\b', s)"
+    },
+    {
+      "task_id": "mbpp/320",
+      "passed": true,
+      "code": "def sum_difference(n):\n    squared_sum = (n * (n + 1) // 2) ** 2\n    sum_of_squares = n * (n + 1) * (2 * n + 1) // 6\n    return squared_sum - sum_of_squares"
+    },
+    {
+      "task_id": "mbpp/321",
+      "passed": false,
+      "code": "def find_demlo(n):\n    return ''.join(str(i) for i in range(1, int(n) + 1)) + ''.join(str(i) for i in range(int(n) - 1, 0, -1))"
+    },
+    {
+      "task_id": "mbpp/322",
+      "passed": true,
+      "code": "def position_min(lst):\n    min_val = min(lst)\n    return [i for i, x in enumerate(lst) if x == min_val]"
+    },
+    {
+      "task_id": "mbpp/323",
+      "passed": false,
+      "code": "def re_arrange(arr, n):\n    pos = [x for x in arr if x > 0]\n    neg = [x for x in arr if x < 0]\n    result = []\n    i, j = 0, 0\n    while i < len(pos) or j < len(neg):\n        if i < len(pos):\n            result.append(pos[i])\n            i += 1\n        if j < len(neg):\n            result.append(neg[j])\n            j += 1\n    return result"
+    },
+    {
+      "task_id": "mbpp/324",
+      "passed": false,
+      "code": "def sum_of_alternates(t):\n    return (sum(t[::2]), sum(t[1::2]))"
+    },
+    {
+      "task_id": "mbpp/325",
+      "passed": true,
+      "code": "def get_Min_Squares(n):\n    dp = [float('inf')] * (n + 1)\n    dp[0] = 0\n    for i in range(1, n + 1):\n        for j in range(1, int(i**0.5) + 1):\n            dp[i] = min(dp[i], dp[i - j*j] + 1)\n    return dp[n]"
+    },
+    {
+      "task_id": "mbpp/326",
+      "passed": false,
+      "code": "from collections import Counter\nimport re\n\ndef most_occurrences(strings):\n    words = []\n    for s in strings:\n        words.extend(re.findall(r'\\b\\w+\\b', s.lower()))\n    counter = Counter(words)\n    return counter.most_common(1)[0][0]"
+    },
+    {
+      "task_id": "mbpp/327",
+      "passed": true,
+      "code": "def check_isosceles(a, b, c):\n    return a == b or b == c or a == c"
+    },
+    {
+      "task_id": "mbpp/328",
+      "passed": false,
+      "code": "def rotate_left(lst, n, m):\n    return lst[n:m] + lst[:n] + lst[m:]"
+    },
+    {
+      "task_id": "mbpp/329",
+      "passed": true,
+      "code": "def neg_count(lst):\n    return sum(1 for x in lst if x < 0)"
+    },
+    {
+      "task_id": "mbpp/330",
+      "passed": true,
+      "code": "import re\n\ndef find_char(s):\n    return re.findall(r'\\b\\w{3,5}\\b', s)"
+    },
+    {
+      "task_id": "mbpp/331",
+      "passed": false,
+      "code": "def count_unset_bits(n):\n    return bin(n).count('0')"
+    },
+    {
+      "task_id": "mbpp/332",
+      "passed": true,
+      "code": "def char_frequency(s):\n    return {char: s.count(char) for char in set(s)}"
+    },
+    {
+      "task_id": "mbpp/333",
+      "passed": true,
+      "code": "def Sort(lst):\n    return sorted(lst, key=lambda x: x[1])"
+    },
+    {
+      "task_id": "mbpp/334",
+      "passed": true,
+      "code": "def check_Validity(a, b, c):\n    return a + b > c and a + c > b and b + c > a"
+    },
+    {
+      "task_id": "mbpp/335",
+      "passed": true,
+      "code": "def ap_sum(a, n, d):\n    return n * (2 * a + (n - 1) * d) // 2"
+    },
+    {
+      "task_id": "mbpp/336",
+      "passed": true,
+      "code": "def check_monthnum(month_name):\n    return month_name.lower() == \"february\""
+    },
+    {
+      "task_id": "mbpp/337",
+      "passed": true,
+      "code": "import re\n\ndef text_match_word(text):\n    pattern = r'\\bpython\\.$'\n    if re.search(pattern, text):\n        return ('Found a match!')\n    else:\n        return ('Not matched!')"
+    },
+    {
+      "task_id": "mbpp/338",
+      "passed": true,
+      "code": "def count_Substring_With_Equal_Ends(s):\n    count = 0\n    n = len(s)\n    for i in range(n):\n        for j in range(i, n):\n            if s[i] == s[j]:\n                count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/339",
+      "passed": false,
+      "code": "def find_Divisor(start, end):\n    max_count = 0\n    max_divisor = 0\n    for i in range(start, end + 1):\n        count = 0\n        for j in range(start, end + 1):\n            if j % i == 0:\n                count += 1\n        if count > max_count:\n            max_count = count\n            max_divisor = i\n    return max_divisor"
+    },
+    {
+      "task_id": "mbpp/340",
+      "passed": false,
+      "code": "def sum_three_smallest_nums(numbers):\n    sorted_numbers = sorted(numbers)\n    return sum(sorted_numbers[:3])"
+    },
+    {
+      "task_id": "mbpp/341",
+      "passed": true,
+      "code": "def set_to_tuple(s):\n    return tuple(sorted(s))"
+    },
+    {
+      "task_id": "mbpp/342",
+      "passed": false,
+      "code": "import heapq\n\ndef find_minimum_range(arrs):\n    min_heap = []\n    max_val = -float('inf')\n    for i, arr in enumerate(arrs):\n        heapq.heappush(min_heap, (arr[0], i, 0))\n        max_val = max(max_val, arr[0])\n    \n    result = None\n    while True:\n        current_min, list_idx, element_idx = heapq.heappop(min_heap)\n        if result is None or current_min < result[0]:\n            result = (current_min, max_val)\n        if element_idx == len(arrs[list_idx]) - 1:\n            break\n        next"
+    },
+    {
+      "task_id": "mbpp/343",
+      "passed": true,
+      "code": "def dig_let(s):\n    digits = sum(1 for c in s if c.isdigit())\n    letters = sum(1 for c in s if c.isalpha())\n    return (letters, digits)"
+    },
+    {
+      "task_id": "mbpp/344",
+      "passed": true,
+      "code": "def count_Odd_Squares(a, b):\n    count = 0\n    for i in range(1, int(b**0.5) + 1):\n        square = i * i\n        if square >= a and square <= b:\n            count += 1\n    return count"
+    },
+    {
+      "task_id": "mbpp/345",
+      "passed": true,
+      "code": "def diff_consecutivenums(lst):\n    return [lst[i+1] - lst[i] for i in range(len(lst)-1)]"
+    },
+    {
+      "task_id": "mbpp/346",
+      "passed": false,
+      "code": "def zigzag(n, k):\n    if k == 0 or k == n:\n        return 1\n    return zigzag(n - 1, k - 1) + zigzag(n - 1, k + 1)"
+    },
+    {
+      "task_id": "mbpp/347",
+      "passed": true,
+      "code": "def count_Squares(m, n):\n    count = 0\n    for i in range(1, min(m, n) + 1):\n        count += (m - i + 1) * (n - i + 1)\n    return count"
+    },
+    {
+      "task_id": "mbpp/348",
+      "passed": false,
+      "code": "def find_ways(n):\n    from functools import lru_cache\n\n    @lru_cache(None)\n    def dp(pos, sum_so_far):\n        if pos == n:\n            return 1 if sum_so_far >= 0 else 0\n        total = 0\n        for val in [1, -1]:\n            new_sum = sum_so_far + val\n            if new_sum >= -n + 1:\n                total += dp(pos + 1, new_sum)\n        return total\n\n    return dp(0, 0)"
+    },
+    {
+      "task_id": "mbpp/349",
+      "passed": true,
+      "code": "def check(s):\n    return \"Yes\" if all(c in '01' for c in s) else \"No\""
+    },
+    {
+      "task_id": "mbpp/350",
+      "passed": false,
+      "code": "def minimum_Length(s):\n    if not s:\n        return 0\n    left, right = 0, len(s) - 1\n    while left < right and s[left] == s[right]:\n        left += 1\n        right -= 1\n    return right - left + 1"
+    },
+    {
+      "task_id": "mbpp/351",
+      "passed": false,
+      "code": "def first_Element(arr, k, n):\n    count = {}\n    for i in range(n):\n        if arr[i] in count:\n            count[arr[i]] += 1\n        else:\n            count[arr[i]] = 1\n    for i in range(n):\n        if count[arr[i]] == k:\n            return arr[i]\n    return -1"
+    },
+    {
+      "task_id": "mbpp/352",
+      "passed": true,
+      "code": "def unique_Characters(s):\n    return len(set(s)) == len(s)"
+    },
+    {
+      "task_id": "mbpp/353",
+      "passed": true,
+      "code": "def remove_column(matrix, column_index):\n    return [row[:column_index] + row[column_index+1:] for row in matrix]"
+    },
+    {
+      "task_id": "mbpp/354",
+      "passed": false,
+      "code": "def tn_ap(a, d, n):\n    return a + (n - 1) * d"
+    },
+    {
+      "task_id": "mbpp/355",
+      "passed": false,
+      "code": "def count_Rectangles(r):\n    return 4 * int(r // 1)"
+    },
+    {
+      "task_id": "mbpp/356",
+      "passed": true,
+      "code": "def find_angle(a, b):\n    return 180 - a - b"
+    },
+    {
+      "task_id": "mbpp/357",
+      "passed": true,
+      "code": "def find_max(records):\n    return max(max(t) for t in records)"
+    },
+    {
+      "task_id": "mbpp/358",
+      "passed": true,
+      "code": "def moddiv_list(list1, list2):\n    return list(map(lambda x, y: x % y, list1, list2))"
+    },
+    {
+      "task_id": "mbpp/359",
+      "passed": true,
+      "code": "def Check_Solution(a, b, c):\n    discriminant = b**2 - 4*a*c\n    if discriminant < 0:\n        return \"No\"\n    root1 = (-b + discriminant**0.5) / (2*a)\n    root2 = (-b - discriminant**0.5) / (2*a)\n    return \"Yes\" if abs(root1 - 2*root2) < 1e-9 or abs(root2 - 2*root1) < 1e-9 else \"No\""
+    },
+    {
+      "task_id": "mbpp/360",
+      "passed": true,
+      "code": "def get_carol(n):\n    return (2**n - 1)**2 - 2"
+    },
+    {
+      "task_id": "mbpp/361",
+      "passed": true,
+      "code": "def remove_empty(lst):\n    return [item for item in lst if not (isinstance(item, list) and not item)]"
+    },
+    {
+      "task_id": "mbpp/362",
+      "passed": true,
+      "code": "from collections import Counter\n\ndef max_occurrences(lst):\n    counts = Counter(lst)\n    max_count = max(counts.values())\n    for item, count in counts.items():\n        if count == max_count:\n            return item"
+    },
+    {
+      "task_id": "mbpp/363",
+      "passed": false,
+      "code": "def add_K_element(tuples, k):\n    return tuple(tuple(x + k for x in t) for t in tuples)"
+    },
+    {
+      "task_id": "mbpp/364",
+      "passed": true,
+      "code": "def min_flip_to_make_string_alternate(s):\n    count_start_with_0 = 0\n    count_start_with_1 = 0\n    for i, char in enumerate(s):\n        if i % 2 == 0:\n            if char != '0':\n                count_start_with_0 += 1\n            if char != '1':\n                count_start_with_1 += 1\n        else:\n            if char != '1':\n                count_start_with_0 += 1\n            if char != '0':\n                count_start_with_1 += 1\n    return min(count_start_with_0, count_start_with_1)"
+    },
+    {
+      "task_id": "mbpp/365",
+      "passed": true,
+      "code": "def count_Digit(n):\n    return len(str(abs(n)))"
+    },
+    {
+      "task_id": "mbpp/366",
+      "passed": true,
+      "code": "def adjacent_num_product(nums):\n    max_product = float('-inf')\n    for i in range(len(nums) - 1):\n        product = nums[i] * nums[i + 1]\n        if product > max_product:\n            max_product = product\n    return max_product"
+    },
+    {
+      "task_id": "mbpp/367",
+      "passed": false,
+      "code": "def is_tree_balanced(root):\n    def check(node):\n        if not node:\n            return 0\n        left = check(node.left)\n        if left == -1:\n            return -1\n        right = check(node.right)\n        if right == -1:\n            return -1\n        if abs(left - right) > 1:\n            return -1\n        return max(left, right) + 1\n    return check(root) != -1"
+    },
+    {
+      "task_id": "mbpp/368",
+      "passed": true,
+      "code": "def repeat_tuples(tup, n):\n    return tuple(tup for _ in range(n))"
+    },
+    {
+      "task_id": "mbpp/369",
+      "passed": true,
+      "code": "def lateralsurface_cuboid(length, width, height):\n    return 2 * (length + width) * height"
+    },
+    {
+      "task_id": "mbpp/370",
+      "passed": true,
+      "code": "def float_sort(tup):\n    return sorted(tup, key=lambda x: float(x[1]), reverse=True)"
+    },
+    {
+      "task_id": "mbpp/371",
+      "passed": true,
+      "code": "def smallest_missing(arr, start, end):\n    for i in range(start, end + 1):\n        if arr[i] != i - start:\n            return i\n    return end + 1"
+    },
+    {
+      "task_id": "mbpp/372",
+      "passed": true,
+      "code": "import heapq\n\ndef heap_assending(lst):\n    heapq.heapify(lst)\n    return [heapq.heappop(lst) for _ in range(len(lst))]"
+    },
+    {
+      "task_id": "mbpp/373",
+      "passed": true,
+      "code": "def volume_cuboid(length, width, height):\n    return length * width * height"
+    },
+    {
+      "task_id": "mbpp/374",
+      "passed": false,
+      "code": "from itertools import permutations\n\ndef permute_string(s):\n    return [''.join(p) for p in permutations(s)]"
+    },
+    {
+      "task_id": "mbpp/375",
+      "passed": false,
+      "code": "def round_num(n, multiple):\n    return round(n / multiple) * multiple"
+    },
+    {
+      "task_id": "mbpp/376",
+      "passed": true,
+      "code": "def remove_replica(tup, custom_value='MSP'):\n    result = []\n    seen = set()\n    for item in tup:\n        if item in seen:\n            result.append(custom_value)\n        else:\n            seen.add(item)\n            result.append(item)\n    return tuple(result)"
+    },
+    {
+      "task_id": "mbpp/377",
+      "passed": true,
+      "code": "def remove_Char(s, c):\n    return s.replace(c, '')"
+    },
+    {
+      "task_id": "mbpp/378",
+      "passed": true,
+      "code": "def move_first(lst):\n    if not lst:\n        return []\n    return [lst[-1]] + lst[:-1]"
+    },
+    {
+      "task_id": "mbpp/379",
+      "passed": true,
+      "code": "def surfacearea_cuboid(l, w, h):\n    return 2 * (l*w + w*h + h*l)"
+    },
+    {
+      "task_id": "mbpp/380",
+      "passed": false,
+      "code": "def multi_list(rows, cols):\n    return [[i + j * cols for j in range(cols)] for i in range(rows)]"
+    },
+    {
+      "task_id": "mbpp/381",
+      "passed": true,
+      "code": "def index_on_inner_list(lst, index):\n    return sorted(lst, key=lambda x: x[index])"
+    },
+    {
+      "task_id": "mbpp/382",
+      "passed": true,
+      "code": "def find_rotation_count(arr):\n    left, right = 0, len(arr) - 1\n    while left < right:\n        mid = (left + right) // 2\n        if arr[mid] > arr[right]:\n            left = mid + 1\n        else:\n            right = mid\n    return left"
+    },
+    {
+      "task_id": "mbpp/383",
+      "passed": false,
+      "code": "def even_bit_toggle_number(n):\n    return n ^ (0xAAAAAAAA)"
+    },
+    {
+      "task_id": "mbpp/384",
+      "passed": true,
+      "code": "def frequency_Of_Smallest(n, arr):\n    return arr.count(min(arr))"
+    },
+    {
+      "task_id": "mbpp/385",
+      "passed": false,
+      "code": "def get_perrin(n):\n    if n == 0:\n        return 0\n    elif n == 1:\n        return 1\n    elif n == 2:\n        return 2\n    return get_perrin(n - 3) + get_perrin(n - 2)"
+    },
+    {
+      "task_id": "mbpp/386",
+      "passed": false,
+      "code": "def swap_count(s):\n    left = 0\n    right = 0\n    swap = 0\n    for char in s:\n        if char == '[':\n            left += 1\n        else:\n            right += 1\n    for char in s:\n        if char == '[':\n            if right > 0:\n                swap += 1\n                right -= 1\n            else:\n                left -= 1\n        else:\n            if left > 0:\n                swap += 1\n                left -= 1\n            else:\n                right -= 1\n    return swap"
+    },
+    {
+      "task_id": "mbpp/387",
+      "passed": true,
+      "code": "def even_or_odd(hex_num):\n    last_digit = hex_num[-1]\n    if int(last_digit, 16) % 2 == 0:\n        return \"Even\"\n    else:\n        return \"Odd\""
+    },
+    {
+      "task_id": "mbpp/388",
+      "passed": false,
+      "code": "def highest_Power_of_2(n):\n    return 1 << (n - 1).bit_length()"
+    },
+    {
+      "task_id": "mbpp/389",
+      "passed": true,
+      "code": "def find_lucas(n):\n    a, b = 2, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a"
+    },
+    {
+      "task_id": "mbpp/390",
+      "passed": true,
+      "code": "def add_string(lst, string):\n    return [string.format(item) for item in lst]"
+    },
+    {
+      "task_id": "mbpp/391",
+      "passed": true,
+      "code": "def convert_list_dictionary(*lists):\n    return [{'{}'.format(lists[0][i]): {lists[1][i]: lists[2][i]}} for i in range(len(lists[0]))]"
+    },
+    {
+      "task_id": "mbpp/392",
+      "passed": false,
+      "code": "def get_max_sum(n, memo={}):\n    if n <= 1:\n        return n\n    if n in memo:\n        return memo[n]\n    max_sum = n\n    for i in [2, 3, 4, 5]:\n        current = get_max_sum(n // i, memo)\n        max_sum = max(max_sum, current)\n    memo[n] = max_sum\n    return max_sum"
+    },
+    {
+      "task_id": "mbpp/393",
+      "passed": false,
+      "code": "def max_length_list(lists):\n    return max(lists, key=lambda x: len(x))"
+    },
+    {
+      "task_id": "mbpp/394",
+      "passed": true,
+      "code": "def check_distinct(tup):\n    return len(set(tup)) == len(tup)"
+    },
+    {
+      "task_id": "mbpp/395",
+      "passed": true,
+      "code": "def first_non_repeating_character(s):\n    count = {}\n    for char in s:\n        count[char] = count.get(char, 0) + 1\n    for char in s:\n        if count[char] == 1:\n            return char\n    return None"
+    },
+    {
+      "task_id": "mbpp/396",
+      "passed": false,
+      "code": "import re\n\ndef check_char(s):\n    return \"Valid\" if re.fullmatch(r'^(.).*\\1$', s) else \"Invalid\""
+    },
+    {
+      "task_id": "mbpp/397",
+      "passed": true,
+      "code": "def median_numbers(a, b, c):\n    return sorted([a, b, c])[1]"
+    },
+    {
+      "task_id": "mbpp/398",
+      "passed": false,
+      "code": "def sum_of_digits(numbers):\n    return sum(int(digit) for number in numbers for digit in str(number))"
+    },
+    {
+      "task_id": "mbpp/399",
+      "passed": true,
+      "code": "def bitwise_xor(tuple1, tuple2):\n    return tuple(a ^ b for a, b in zip(tuple1, tuple2))"
+    },
+    {
+      "task_id": "mbpp/400",
+      "passed": false,
+      "code": "def extract_freq(lst):\n    return len(set(lst))"
+    },
+    {
+      "task_id": "mbpp/401",
+      "passed": true,
+      "code": "def add_nested_tuples(t1, t2):\n    return tuple(tuple(a + b for a, b in zip(sub_t1, sub_t2)) for sub_t1, sub_t2 in zip(t1, t2))"
+    },
+    {
+      "task_id": "mbpp/402",
+      "passed": false,
+      "code": "def ncr_modp(n, r, p):\n    if r > n:\n        return 0\n    if r == 0 or r == n:\n        return 1 % p\n    r = min(r, n - r)\n    numerator = 1\n    denominator = 1\n    for i in range(r):\n        numerator = (numerator * (n - i)) % p\n        denominator = (denominator * (i + 1)) % p\n    return (numerator * pow(denominator, p-2, p)) % p"
+    },
+    {
+      "task_id": "mbpp/403",
+      "passed": true,
+      "code": "import re\n\ndef is_valid_URL(url):\n    pattern = r'^(https?://)?([a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)+)([/?#][^\\s]*)?$'\n    return re.match(pattern, url) is not None"
+    },
+    {
+      "task_id": "mbpp/404",
+      "passed": true,
+      "code": "def minimum(a, b):\n    return a if a < b else b"
+    },
+    {
+      "task_id": "mbpp/405",
+      "passed": true,
+      "code": "def check_tuplex(tup, element):\n    return element in tup"
+    },
+    {
+      "task_id": "mbpp/406",
+      "passed": true,
+      "code": "def find_Parity(n):\n    return \"Even Parity\" if n % 2 == 0 else \"Odd Parity\""
+    },
+    {
+      "task_id": "mbpp/407",
+      "passed": false,
+      "code": "def rearrange_bigger(n):\n    digits = list(str(n))\n    for i in range(len(digits)-2, -1, -1):\n        if digits[i] < digits[i+1]:\n            min_digit = min(d for d in digits[i+1:] if d > digits[i])\n            idx = digits[i+1:].index(min_digit) + i + 1\n            digits[i], digits[idx] = digits[idx], digits[i]\n            return int(''.join(digits))\n    return -1"
+    },
+    {
+      "task_id": "mbpp/408",
+      "passed": true,
+      "code": "import heapq\n\ndef k_smallest_pairs(nums1, nums2, k):\n    if not nums1 or not nums2:\n        return []\n    heap = []\n    visited = set()\n    heapq.heappush(heap, (nums1[0] + nums2[0], 0, 0))\n    visited.add((0, 0))\n    result = []\n    while heap and len(result) < k:\n        sum_val, i, j = heapq.heappop(heap)\n        result.append([nums1[i], nums2[j]])\n        if i + 1 < len(nums1) and (i + 1, j) not in visited:\n            heapq.heappush(heap, (nums1[i + 1] + nums2[j], i + 1, j))\n            vis"
+    },
+    {
+      "task_id": "mbpp/409",
+      "passed": true,
+      "code": "def min_product_tuple(lst):\n    return min(a * b for a, b in lst)"
+    },
+    {
+      "task_id": "mbpp/410",
+      "passed": true,
+      "code": "def min_val(lst):\n    return min(x for x in lst if isinstance(x, (int, float)))"
+    },
+    {
+      "task_id": "mbpp/411",
+      "passed": false,
+      "code": "import re\n\ndef snake_to_camel(s):\n    return re.sub(r'(_\\w)', lambda m: m.group(1)[1:].upper(), s)"
+    },
+    {
+      "task_id": "mbpp/412",
+      "passed": true,
+      "code": "def remove_odd(lst):\n    return [x for x in lst if x % 2 == 0]"
+    },
+    {
+      "task_id": "mbpp/413",
+      "passed": true,
+      "code": "def extract_nth_element(lst, n):\n    return [item[n] for item in lst]"
+    },
+    {
+      "task_id": "mbpp/414",
+      "passed": true,
+      "code": "def overlapping(seq1, seq2):\n    return set(seq1) & set(seq2) != set()"
+    },
+    {
+      "task_id": "mbpp/415",
+      "passed": false,
+      "code": "def max_Product(arr):\n    if len(arr) < 2:\n        return None\n    max1 = max2 = float('-inf')\n    min1 = min2 = float('inf')\n    for num in arr:\n        if num > max1:\n            max2 = max1\n            max1 = num\n        elif num > max2:\n            max2 = num\n        if num < min1:\n            min2 = min1\n            min1 = num\n        elif num < min2:\n            min2 = num\n    return (max1, max2) if max1 * max2 > min1 * min2 else (min1, min2)"
+    },
+    {
+      "task_id": "mbpp/416",
+      "passed": false,
+      "code": "def breakSum(n):\n    if n <= 1:\n        return n\n    max_sum = 0\n    for i in range(1, n):\n        for j in range(1, n - i + 1):\n            current = i + j + breakSum(n - i - j)\n            if current > max_sum:\n                max_sum = current\n    return max_sum"
+    },
+    {
+      "task_id": "mbpp/417",
+      "passed": false,
+      "code": "def group_tuples(tuples_list):\n    if not tuples_list:\n        return []\n    first_elements = [t[0] for t in tuples_list]\n    common_first = min(set(first_elements), key=first_elements.count)\n    grouped = []\n    current_group = [t for t in tuples_list if t[0] == common_first]\n    for t in current_group:\n        grouped.append(tuple(sorted(t)))\n    remaining = [t for t in tuples_list if t[0] != common_first]\n    return grouped + group_tuples(remaining)"
+    },
+    {
+      "task_id": "mbpp/418",
+      "passed": true,
+      "code": "def Find_Max(lst):\n    return max(lst, key=len)"
+    },
+    {
+      "task_id": "mbpp/419",
+      "passed": false,
+      "code": "def round_and_sum(numbers):\n    rounded = [round(num) for num in numbers]\n    total = sum(rounded)\n    print(total * len(numbers))"
+    },
+    {
+      "task_id": "mbpp/420",
+      "passed": false,
+      "code": "def cube_Sum(n):\n    return n * n * (n + 1) * (n + 1) * (2 * n + 1) // 3"
+    },
+    {
+      "task_id": "mbpp/421",
+      "passed": true,
+      "code": "def concatenate_tuple(tup, delimiter='-'):\n    return delimiter.join(map(str, tup))"
+    },
+    {
+      "task_id": "mbpp/422",
+      "passed": false,
+      "code": "def find_Average_Of_Cube(n):\n    return (n * (n + 1) * (2 * n + 1) * (3 * n**2 + 3 * n - 1)) / 4 * n**2"
+    },
+    {
+      "task_id": "mbpp/423",
+      "passed": false,
+      "code": "def get_maxgold(grid, rows, cols):\n    if not grid or rows == 0 or cols == 0:\n        return 0\n\n    dp = [[0]*cols for _ in range(rows)]\n    max_gold = 0\n\n    for i in range(rows):\n        for j in range(cols):\n            if i == 0:\n                dp[i][j] = grid[i][j]\n            else:\n                if j == 0:\n                    dp[i][j] = dp[i-1][j+1] + grid[i][j]\n                elif j == cols-1:\n                    dp[i][j] = dp[i-1][j-1] + grid[i][j]\n                else:\n             "
+    },
+    {
+      "task_id": "mbpp/424",
+      "passed": true,
+      "code": "def extract_rear(tup):\n    return [s[-1] for s in tup]"
+    },
+    {
+      "task_id": "mbpp/425",
+      "passed": true,
+      "code": "def count_element_in_list(lst, element):\n    return sum(1 for sublist in lst if element in sublist)"
+    },
+    {
+      "task_id": "mbpp/426",
+      "passed": true,
+      "code": "def filter_oddnumbers(numbers):\n    return list(filter(lambda x: x % 2 != 0, numbers))"
+    },
+    {
+      "task_id": "mbpp/427",
+      "passed": true,
+      "code": "import re\n\ndef change_date_format(date_str):\n    return re.sub(r'(\\d{4})-(\\d{2})-(\\d{2})', r'\\3-\\2-\\1', date_str)"
+    },
+    {
+      "task_id": "mbpp/428",
+      "passed": true,
+      "code": "def shell_sort(arr):\n    n = len(arr)\n    gap = n // 2\n    while gap > 0:\n        for i in range(gap, n):\n            temp = arr[i]\n            j = i\n            while j >= gap and arr[j - gap] > temp:\n                arr[j] = arr[j - gap]\n                j -= gap\n            arr[j] = temp\n        gap //= 2\n    return arr"
+    },
+    {
+      "task_id": "mbpp/429",
+      "passed": true,
+      "code": "def and_tuples(tuple1, tuple2):\n    return tuple(a & b for a, b in zip(tuple1, tuple2))"
+    },
+    {
+      "task_id": "mbpp/430",
+      "passed": false,
+      "code": "def parabola_directrix(a, h, k):\n    return -a * (h ** 2) - 2 * a * h * k + a * k ** 2 + 2 * k"
+    },
+    {
+      "task_id": "mbpp/431",
+      "passed": false,
+      "code": "def common_element(list1, list2):\n    return bool(set(list1) & set(list2))"
+    },
+    {
+      "task_id": "mbpp/432",
+      "passed": false,
+      "code": "def median_trapezium(a, b, h):\n    return (a + b) * h / 2"
+    },
+    {
+      "task_id": "mbpp/433",
+      "passed": false,
+      "code": "def check_greater(arr, num):\n    if all(num > x for x in arr):\n        return 'Yes, entered number is greater than all elements in the array'\n    else:\n        return 'No, entered number is less than those in the array'"
+    },
+    {
+      "task_id": "mbpp/434",
+      "passed": false,
+      "code": "import re\n\ndef text_match_one(text):\n    pattern = r'ab+'\n    if re.fullmatch(pattern, text):\n        return 'Matched!'\n    else:\n        return 'Not matched!'"
+    },
+    {
+      "task_id": "mbpp/435",
+      "passed": true,
+      "code": "def last_Digit(n):\n    return n % 10"
+    },
+    {
+      "task_id": "mbpp/436",
+      "passed": false,
+      "code": "def neg_nos(lst):\n    return tuple(num for num in lst if num < 0)"
+    },
+    {
+      "task_id": "mbpp/437",
+      "passed": true,
+      "code": "def remove_odd(s):\n    return s[1::2]"
+    },
+    {
+      "task_id": "mbpp/438",
+      "passed": false,
+      "code": "def count_bidirectional(pairs):\n    count = 0\n    seen = set()\n    for a, b in pairs:\n        if (a, b) in seen:\n            count += 1\n            seen.remove((a, b))\n        else:\n            seen.add((a, b))\n    return str(count)"
+    },
+    {
+      "task_id": "mbpp/439",
+      "passed": true,
+      "code": "def multiple_to_single(lst):\n    return int(''.join(map(str, lst)))"
+    },
+    {
+      "task_id": "mbpp/440",
+      "passed": false,
+      "code": "import re\n\ndef find_adverb_position(sentence):\n    words = sentence.split()\n    adverbs = [word for word in words if re.search(r'\\b\\w+ly\\b', word)]\n    if not adverbs:\n        return ()\n    first_adverb = adverbs[0]\n    start = sentence.index(first_adverb)\n    end = start + len(first_adverb)\n    return (start, end, first_adverb)"
+    },
+    {
+      "task_id": "mbpp/441",
+      "passed": true,
+      "code": "def surfacearea_cube(side_length):\n    return 6 * side_length ** 2"
+    },
+    {
+      "task_id": "mbpp/442",
+      "passed": false,
+      "code": "def positive_count(arr):\n    positive = sum(1 for num in arr if num > 0)\n    return positive / len(arr)"
+    },
+    {
+      "task_id": "mbpp/443",
+      "passed": false,
+      "code": "def largest_neg(lst):\n    return max(num for num in lst if num < 0)"
+    },
+    {
+      "task_id": "mbpp/444",
+      "passed": false,
+      "code": "def trim_tuple(tuples, k):\n    return [tuple(sub[:k]) for sub in tuples]"
+    },
+    {
+      "task_id": "mbpp/445",
+      "passed": true,
+      "code": "def index_multiplication(tup1, tup2):\n    return tuple(tuple(a * b for a, b in zip(tup1[i], tup2[i])) for i in range(len(tup1)))"
+    },
+    {
+      "task_id": "mbpp/446",
+      "passed": true,
+      "code": "def count_Occurrence(tup, lst):\n    return sum(tup.count(item) for item in lst)"
+    },
+    {
+      "task_id": "mbpp/447",
+      "passed": true,
+      "code": "def cube_nums(nums):\n    return list(map(lambda x: x**3, nums))"
+    },
+    {
+      "task_id": "mbpp/448",
+      "passed": false,
+      "code": "def cal_sum(n):\n    if n < 1:\n        return 0\n    perrin = [3, 0, 2]\n    for i in range(3, n + 1):\n        perrin.append(perrin[i - 2] - perrin[i - 3])\n    return sum(perrin)"
+    },
+    {
+      "task_id": "mbpp/449",
+      "passed": true,
+      "code": "def check_Triangle(x1, y1, x2, y2, x3, y3):\n    # Calculate the lengths of the sides\n    a = ((x2 - x3)**2 + (y2 - y3)**2)**0.5\n    b = ((x1 - x3)**2 + (y1 - y3)**2)**0.5\n    c = ((x1 - x2)**2 + (y1 - y2)**2)**0.5\n\n    # Check triangle inequality theorem\n    if a + b > c and a + c > b and b + c > a:\n        return 'Yes'\n    else:\n        return 'No'"
+    },
+    {
+      "task_id": "mbpp/450",
+      "passed": true,
+      "code": "def extract_string(strings, size):\n    return [s for s in strings if len(s) == size]"
+    },
+    {
+      "task_id": "mbpp/451",
+      "passed": true,
+      "code": "import re\n\ndef remove_whitespaces(s):\n    return re.sub(r'\\s+', '', s)"
+    },
+    {
+      "task_id": "mbpp/452",
+      "passed": false,
+      "code": "def loss_amount(cost, selling):\n    if selling < cost:\n        return cost - selling\n    else:\n        return None"
+    },
+    {
+      "task_id": "mbpp/453",
+      "passed": true,
+      "code": "def sumofFactors(n):\n    total = 0\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            if i % 2 == 0:\n                total += i\n            if (n // i) % 2 == 0 and n // i != i:\n                total += n // i\n    if n % 2 == 0:\n        total += n\n    return total"
+    },
+    {
+      "task_id": "mbpp/454",
+      "passed": true,
+      "code": "import re\n\ndef text_match_wordz(text):\n    pattern = r'\\b\\w*z\\w*\\b'\n    if re.search(pattern, text):\n        return ('Found a match!')\n    else:\n        return ('Not matched!')"
+    },
+    {
+      "task_id": "mbpp/455",
+      "passed": false,
+      "code": "def check_monthnumber(month):\n    return month in {1, 3, 5, 7, 8, 10, 12}"
+    },
+    {
+      "task_id": "mbpp/456",
+      "passed": true,
+      "code": "def reverse_string_list(string_list):\n    return [s[::-1] for s in string_list]"
+    },
+    {
+      "task_id": "mbpp/457",
+      "passed": true,
+      "code": "def Find_Min(list_of_lists):\n    return min(list_of_lists, key=lambda x: len(x))"
+    },
+    {
+      "task_id": "mbpp/458",
+      "passed": true,
+      "code": "def rectangle_area(length, width):\n    return length * width"
+    },
+    {
+      "task_id": "mbpp/459",
+      "passed": true,
+      "code": "import re\n\ndef remove_uppercase(s):\n    return re.sub(r'[A-Z]', '', s)"
+    },
+    {
+      "task_id": "mbpp/460",
+      "passed": true,
+      "code": "def Extract(lst):\n    return [sublist[0] for sublist in lst]"
+    },
+    {
+      "task_id": "mbpp/461",
+      "passed": false,
+      "code": "def upper_ctr(s):\n    return sum(1 for c in s if c.isupper())"
+    },
+    {
+      "task_id": "mbpp/462",
+      "passed": false,
+      "code": "def combinations_list(lst):\n    result = [[]]\n    for item in lst:\n        result += [sub + [item] for sub in result]\n    return result"
+    },
+    {
+      "task_id": "mbpp/463",
+      "passed": true,
+      "code": "def max_subarray_product(nums):\n    if not nums:\n        return 0\n    max_prod = min_prod = result = nums[0]\n    for num in nums[1:]:\n        temp = max_prod\n        max_prod = max(num, max_prod * num, min_prod * num)\n        min_prod = min(num, temp * num, min_prod * num)\n        result = max(result, max_prod)\n    return result"
+    },
+    {
+      "task_id": "mbpp/464",
+      "passed": true,
+      "code": "def check_value(d, value):\n    return all(v == value for v in d.values())"
+    },
+    {
+      "task_id": "mbpp/465",
+      "passed": true,
+      "code": "def drop_empty(d):\n    return {k: v for k, v in d.items() if v is not None}"
+    },
+    {
+      "task_id": "mbpp/466",
+      "passed": true,
+      "code": "def find_peak(arr, n):\n    left, right = 0, n - 1\n    while left < right:\n        mid = (left + right) // 2\n        if arr[mid] > arr[mid + 1]:\n            right = mid\n        else:\n            left = mid + 1\n    return left"
+    },
+    {
+      "task_id": "mbpp/467",
+      "passed": false,
+      "code": "def decimal_to_octal(n):\n    return oct(n)[2:]"
+    },
+    {
+      "task_id": "mbpp/468",
+      "passed": false,
+      "code": "def max_product(arr, n):\n    if n == 0:\n        return 0\n    dp = [1] * n\n    for i in range(n):\n        for j in range(i):\n            if arr[j] < arr[i]:\n                dp[i] = max(dp[i], dp[j] * arr[i])\n    return max(dp)"
+    },
+    {
+      "task_id": "mbpp/469",
+      "passed": false,
+      "code": "def max_profit(prices, k):\n    if not prices or k == 0:\n        return 0\n    n = len(prices)\n    buy = [0] * n\n    sell = [0] * n\n    for i in range(k):\n        buy[i] = min(buy[i-1] if i > 0 else float('inf'), prices[i] - sell[i-1] if i > 0 else prices[i])\n        sell[i] = max(sell[i-1] if i > 0 else 0, prices[i] - buy[i])\n    return sell[-1]"
+    },
+    {
+      "task_id": "mbpp/470",
+      "passed": false,
+      "code": "def add_pairwise(t):\n    return tuple(sum(x) for x in zip(t, t))"
+    },
+    {
+      "task_id": "mbpp/471",
+      "passed": true,
+      "code": "def find_remainder(arr, n, divisor):\n    result = 1\n    for num in arr:\n        result = (result * num) % divisor\n    return result % divisor"
+    },
+    {
+      "task_id": "mbpp/472",
+      "passed": true,
+      "code": "def check_Consecutive(lst):\n    return all(lst[i] + 1 == lst[i+1] for i in range(len(lst)-1))"
+    },
+    {
+      "task_id": "mbpp/473",
+      "passed": true,
+      "code": "def tuple_intersection(list1, list2):\n    set1 = set(tuple(sorted(t)) for t in list1)\n    set2 = set(tuple(sorted(t)) for t in list2)\n    return set1 & set2"
+    },
+    {
+      "task_id": "mbpp/474",
+      "passed": true,
+      "code": "def replace_char(s, old, new):\n    return s.replace(old, new)"
+    },
+    {
+      "task_id": "mbpp/475",
+      "passed": true,
+      "code": "def sort_counter(counter):\n    return sorted(counter.items(), key=lambda x: x[1], reverse=True)"
+    },
+    {
+      "task_id": "mbpp/476",
+      "passed": true,
+      "code": "def big_sum(arr):\n    return max(arr) + min(arr)"
+    },
+    {
+      "task_id": "mbpp/477",
+      "passed": true,
+      "code": "def is_lower(s):\n    return s.lower()"
+    },
+    {
+      "task_id": "mbpp/478",
+      "passed": true,
+      "code": "def remove_lowercase(s):\n    return ''.join(char for char in s if not char.islower())"
+    },
+    {
+      "task_id": "mbpp/479",
+      "passed": true,
+      "code": "def first_Digit(n):\n    while n >= 10:\n        n //= 10\n    return n"
+    },
+    {
+      "task_id": "mbpp/480",
+      "passed": true,
+      "code": "from collections import Counter\n\ndef get_max_occuring_char(s):\n    count = Counter(s)\n    max_char = max(count, key=count.get)\n    return max_char"
+    },
+    {
+      "task_id": "mbpp/481",
+      "passed": false,
+      "code": "def is_subset_sum(arr, target_sum, current_sum=0, index=0):\n    if current_sum == target_sum:\n        return True\n    if index >= len(arr) or current_sum > target_sum:\n        return False\n    return is_subset_sum(arr, target_sum, current_sum + arr[index], index + 1) or is_subset_sum(arr, target_sum, current_sum, index + 1)"
+    },
+    {
+      "task_id": "mbpp/482",
+      "passed": true,
+      "code": "import re\n\ndef match(s):\n    return 'Yes' if re.search(r'[A-Z][a-z]+', s) else 'No'"
+    },
+    {
+      "task_id": "mbpp/483",
+      "passed": false,
+      "code": "def first_Factorial_Divisible_Number(x):\n    if x == 1:\n        return 1\n    for i in range(1, x + 1):\n        if factorial(i) % x == 0:\n            return i\n    return -1\n\ndef factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
+    },
+    {
+      "task_id": "mbpp/484",
+      "passed": false,
+      "code": "def remove_matching_tuple(tuple1, tuple2):\n    return tuple(item for item in tuple1 if item not in tuple2)"
+    },
+    {
+      "task_id": "mbpp/485",
+      "passed": true,
+      "code": "def largest_palindrome(arr, n):\n    palindromes = [num for num in arr if str(num) == str(num)[::-1]]\n    return max(palindromes) if palindromes else -1"
+    },
+    {
+      "task_id": "mbpp/486",
+      "passed": true,
+      "code": "import math\n\ndef binomial_probability(n, k, p):\n    comb = math.comb(n, k)\n    return comb * (p ** k) * ((1 - p) ** (n - k))"
+    },
+    {
+      "task_id": "mbpp/487",
+      "passed": true,
+      "code": "def sort_tuple(tuples):\n    return sorted(tuples, key=lambda x: x[-1])"
+    },
+    {
+      "task_id": "mbpp/488",
+      "passed": true,
+      "code": "import math\n\ndef area_pentagon(side_length):\n    return (5 * side_length**2) / (4 * math.tan(math.pi / 5))"
+    },
+    {
+      "task_id": "mbpp/489",
+      "passed": true,
+      "code": "def frequency_Of_Largest(n, arr):\n    return arr.count(max(arr))"
+    },
+    {
+      "task_id": "mbpp/490",
+      "passed": false,
+      "code": "def extract_symmetric(tuples):\n    symmetric = set()\n    seen = set()\n    for a, b in tuples:\n        if (b, a) in seen:\n            symmetric.add((a, b))\n        else:\n            seen.add((a, b))\n    return symmetric"
+    },
+    {
+      "task_id": "mbpp/491",
+      "passed": false,
+      "code": "def sum_gp(a, r, n):\n    return a * (r**n - 1) // (r - 1)"
+    },
+    {
+      "task_id": "mbpp/492",
+      "passed": true,
+      "code": "def binary_search(arr, target):\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return True\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return False"
+    },
+    {
+      "task_id": "mbpp/493",
+      "passed": false,
+      "code": "import math\n\ndef calculate_polygons(x0, y0, x1, y1, size):\n    def hexagon(x, y):\n        angle = 2 * math.pi / 6\n        points = []\n        for i in range(6):\n            px = x + size * math.cos(i * angle)\n            py = y + size * math.sin(i * angle)\n            points.append((px, py))\n        return points\n\n    result = []\n    for i in range(10):\n        row = []\n        for j in range(10):\n            x = x0 + j * 2 * size\n            y = y0 + i * size * 3**0.5 / 2\n            row.append"
+    },
+    {
+      "task_id": "mbpp/494",
+      "passed": false,
+      "code": "def binary_to_integer(binary_tuple):\n    return str(int(''.join(map(str, binary_tuple))))"
+    },
+    {
+      "task_id": "mbpp/495",
+      "passed": true,
+      "code": "import re\n\ndef remove_lowercase(s):\n    return re.sub(r'[a-z]', '', s)"
+    },
+    {
+      "task_id": "mbpp/496",
+      "passed": true,
+      "code": "import heapq\n\ndef heap_queue_smallest(nums, k):\n    return heapq.nsmallest(k, nums)"
+    },
+    {
+      "task_id": "mbpp/497",
+      "passed": true,
+      "code": "import math\n\ndef surfacearea_cone(radius, height):\n    slant_height = math.sqrt(radius**2 + height**2)\n    return math.pi * radius * (radius + slant_height)"
+    },
+    {
+      "task_id": "mbpp/498",
+      "passed": true,
+      "code": "def gcd(a, b):\n    while b:\n        a, b = b, a % b\n    return a"
+    },
+    {
+      "task_id": "mbpp/499",
+      "passed": true,
+      "code": "def diameter_circle(radius):\n    return 2 * radius"
+    },
+    {
+      "task_id": "mbpp/500",
+      "passed": false,
+      "code": "def concatenate_elements(lst):\n    return ' '.join(lst)"
+    },
+    {
+      "task_id": "mbpp/501",
+      "passed": false,
+      "code": "def num_comm_div(a, b):\n    from math import gcd\n    return gcd(a, b)"
+    },
+    {
+      "task_id": "mbpp/502",
+      "passed": true,
+      "code": "def find(a, b):\n    return a % b"
+    },
+    {
+      "task_id": "mbpp/503",
+      "passed": false,
+      "code": "def add_consecutive_nums(lst):\n    result = []\n    i = 0\n    while i < len(lst):\n        j = i\n        total = 0\n        while j < len(lst) and lst[j] == lst[i]:\n            total += lst[j]\n            j += 1\n        result.append(total)\n        i = j\n    return result"
+    },
+    {
+      "task_id": "mbpp/504",
+      "passed": true,
+      "code": "def sum_Of_Series(n):\n    return (n * (n + 1) // 2) ** 2"
+    },
+    {
+      "task_id": "mbpp/505",
+      "passed": true,
+      "code": "def re_order(arr):\n    return [x for x in arr if x != 0] + [x for x in arr if x == 0]"
+    },
+    {
+      "task_id": "mbpp/506",
+      "passed": true,
+      "code": "def permutation_coefficient(n, k):\n    if k > n:\n        return 0\n    result = 1\n    for i in range(k):\n        result *= (n - i)\n    return result"
+    },
+    {
+      "task_id": "mbpp/507",
+      "passed": true,
+      "code": "def remove_words(word_list, words_to_remove):\n    return [word for word in word_list if word not in words_to_remove]"
+    },
+    {
+      "task_id": "mbpp/508",
+      "passed": false,
+      "code": "def same_order(list1, list2):\n    common = [x for x in list1 if x in list2]\n    return common == [x for x in list1 if x in list2]"
+    },
+    {
+      "task_id": "mbpp/509",
+      "passed": false,
+      "code": "def average_Odd(n):\n    total = n * (n + 1) // 2\n    count = (n + 1) // 2\n    return total // count"
+    },
+    {
+      "task_id": "mbpp/510",
+      "passed": true,
+      "code": "def no_of_subsequences(arr, k):\n    count = 0\n    n = len(arr)\n    for i in range(1, 1 << n):\n        product = 1\n        for j in range(n):\n            if i & (1 << j):\n                product *= arr[j]\n                if product >= k:\n                    break\n        if product < k:\n            count += 1\n    return count"
+    }
+  ]
+}
