@@ -47,6 +47,9 @@ def problem_to_verl_record(problem: CodeProblem) -> dict:
         "data_source": f"code_agent/{problem.task_id.split('/')[0]}",
         "agent_name": "tool_agent",
         "prompt": messages,
+        "reward_model": {
+            "ground_truth": problem.test_list,
+        },
         "extra_info": {
             "task_id": problem.task_id,
             "need_tools_kwargs": True,

@@ -6,8 +6,8 @@ tools:
     type: function
     function:
       name: execute_code
-      description: Execute Python code and run all test cases. Returns pass/fail
-        count with detailed error messages and traceback for failures.
+      description: Execute Python code and run all test cases. Returns pass/fail count
+        with detailed error messages and traceback for failures.
       parameters:
         type: object
         properties:

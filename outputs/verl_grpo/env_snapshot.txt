@@ -1,0 +1,160 @@
+═══════════════════════════════════════════════════
+  Training Environment Snapshot
+  2026-04-06 01:09:23
+═══════════════════════════════════════════════════
+
+── Hardware ──
+Mon Apr  6 01:09:23 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.126.09             Driver Version: 580.126.09     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A800-SXM4-80GB          On  |   00000000:16:00.0 Off |                  Off |
+| N/A   27C    P0             61W /  400W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A800-SXM4-80GB          On  |   00000000:8A:00.0 Off |                  Off |
+| N/A   28C    P0             58W /  400W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+── Python ──
+Python 3.12.3
+
+── Key packages ──
+accelerate                         1.13.0
+datasets                           4.7.0
+peft                               0.18.1
+ray                                2.54.1
+sglang                             0.5.9
+torch                              2.9.1
+torch_c_dlpack_ext                 0.1.5
+torch_memory_saver                 0.0.9
+torchao                            0.9.0
+torchaudio                         2.9.1
+torchcodec                         0.8.0
+torchdata                          0.11.0
+torchvision                        0.24.1
+transformers                       4.57.1
+trl                                0.24.0
+verl                               0.7.1
+
+── Model ──
+-rw-r--r-- 1 root root 3.8G Apr  3 23:02 /root/autodl-tmp/models/Qwen3-8B/model-00001-of-00005.safetensors
+-rw-r--r-- 1 root root 3.8G Apr  3 22:59 /root/autodl-tmp/models/Qwen3-8B/model-00002-of-00005.safetensors
+-rw-r--r-- 1 root root 3.7G Apr  3 23:00 /root/autodl-tmp/models/Qwen3-8B/model-00003-of-00005.safetensors
+-rw-r--r-- 1 root root 3.0G Apr  3 22:58 /root/autodl-tmp/models/Qwen3-8B/model-00004-of-00005.safetensors
+-rw-r--r-- 1 root root 1.2G Apr  3 22:56 /root/autodl-tmp/models/Qwen3-8B/model-00005-of-00005.safetensors
+
+── Training data ──
+  data/verl/humaneval.parquet: 164 records
+  data/verl/test.parquet: 500 records
+  data/verl/train.parquet: 374 records
+  data/verl/val.parquet: 90 records
+
+── Config ──
+# Agentic GRPO Full Fine-Tuning — Qwen3-8B on 2×A800-80G
+#
+# 继承 verl 的完整 ppo_trainer 默认配置，只覆盖需要修改的字段。
+# configs/verl/ 下的 symlinks 指向 verl 内置配置。
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# ═══════════════════════════════════════════════════
+#  以下仅覆盖需要修改的字段，其余全部继承 ppo_trainer 默认值
+# ═══════════════════════════════════════════════════
+
+data:
+  train_files: ./data/verl/train.parquet
+  val_files: ./data/verl/val.parquet
+  train_batch_size: 128
+  return_raw_chat: true
+  apply_chat_template_kwargs:
+    enable_thinking: false
+
+actor_rollout_ref:
+  model:
+    path: /root/autodl-tmp/models/Qwen3-8B
+    enable_gradient_checkpointing: true
+
+  actor:
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 2
+    ppo_epochs: 1
+    use_kl_loss: false
+    entropy_coeff: 0.001
+    clip_ratio: 0.2
+    grad_clip: 1.0
+    use_torch_compile: false
+    fsdp_config:
+      param_offload: true
+      optimizer_offload: true
+    optim:
+      lr: 5.0e-7
+      weight_decay: 0.01
+
+  ref:
+    log_prob_micro_batch_size_per_gpu: 2
+    use_torch_compile: false
+
+  rollout:
+    name: sglang
+    gpu_memory_utilization: 0.5
+    tensor_model_parallel_size: 1
+    temperature: 0.9
+    top_p: 0.95
+    response_length: 1024
+    log_prob_micro_batch_size_per_gpu: 2
+    n: 4
+    agent:
+      num_workers: 4
+    multi_turn:
+      enable: true
+      tool_config_path: configs/verl/tool_config.yaml
+      tokenization_sanity_check_mode: ignore_strippable
+
+reward:
+  num_workers: 2
+  custom_reward_function:
+    path: src/reward.py
+    name: compute_score
+
+algorithm:
+  adv_estimator: grpo
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 2
+  total_epochs: 7
+  save_freq: 7
+  test_freq: 7
+  max_actor_ckpt_to_keep: 1
+  project_name: code-agent-grpo
+  experiment_name: qwen3-8b-full-grpo
+  logger:
+    - tensorboard
+  default_local_dir: ./outputs/verl_grpo/checkpoints
+  rollout_data_dir: ./outputs/verl_grpo/rollout_data
+  log_val_generations: 20
+
+── Disk ──
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md0         50G   16G   35G  31% /root/autodl-tmp
+
+── Memory ──
+               total        used        free      shared  buff/cache   available
+Mem:           1.0Ti        19Gi       621Gi       1.2Gi       366Gi       979Gi
+Swap:             0B          0B          0B

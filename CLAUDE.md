@@ -1,6 +1,6 @@
 # code-agent
 
-用 GRPO 强化学习训练 Qwen2.5-Coder-7B-Instruct 成为多轮代码 Agent，能够自主调用工具完成"写码 → 测试 → 调试"的迭代闭环。
+用 GRPO 强化学习全量微调 Qwen3-8B 成为多轮代码 Agent，能够自主调用工具完成"写码 → 测试 → 调试"的迭代闭环。
 
 ## 项目结构
 
@@ -19,11 +19,13 @@ src/
   verl_tools/             # verl 训练工具层
     execute_code_tool.py  #   verl BaseTool 适配：执行代码+跑测试+calc_reward()
 configs/verl/
-  grpo_qwen_7b.yaml      # verl GRPO 训练主配置
+  grpo_qwen3_8b.yaml     # verl GRPO 训练主配置（Qwen3-8B 全量微调，2×A800）
+  grpo_qwen_7b.yaml      # 旧配置（Qwen2.5-Coder-7B LoRA，仅供参考）
   tool_config.yaml        # 工具类注册（映射到 verl_tools/）
 scripts/
   train_verl.sh           # 训练入口
   evaluate.sh             # 评测入口
+  convert_checkpoint.py   # FSDP checkpoint 转换（支持全量微调和 LoRA）
   prepare_resources.sh    # 模型/数据集下载（超算环境）
 tests/
   test_verl_tools.py      # 工具逻辑 + reward 计算单元测试
@@ -49,7 +51,9 @@ ExecuteCodeTool  或  evaluate.py
 
 ## 模型和工具
 
-- 基座模型：`Qwen/Qwen2.5-Coder-7B-Instruct`
+- 基座模型：`Qwen3-8B`（本地路径 `/root/autodl-tmp/models/Qwen3-8B`）
+- 训练方式：GRPO 全量微调（2×A800-80G，FSDP）
+- Qwen3 思考模式：训练时禁用（`enable_thinking: false`）
 - 单工具：`execute_code`（接收完整代码 → 语法检查 → 跑全部测试 → 返回 pass/fail + traceback）
 - 工具调用格式：Qwen 原生 `<tool_call>...</tool_call>`
 
@@ -70,25 +74,43 @@ ExecuteCodeTool  或  evaluate.py
 # 本地测试（不需要 GPU 和 verl）
 python3 tests/test_verl_tools.py
 
-# 准备 verl 训练数据
-python -m src.data.verl_dataset
+# 准备 verl 训练数据（本地数据集，不下载 APPS）
+python -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets --no_apps
 
-# 训练（需要 verl + GPU）
-bash scripts/train_verl.sh 4          # 4 卡
+# 训练（需要 GPU）
+bash scripts/train_verl.sh              # 默认 2 GPU + Qwen3-8B 全量微调
+bash scripts/train_verl.sh 2 grpo_qwen3_8b  # 显式指定
+
+# 导出 checkpoint 为 HF 模型（全量微调）
+python scripts/convert_checkpoint.py --mode full-merge \
+    --ckpt_path outputs/verl_grpo/checkpoints/global_step_50 \
+    --output_dir /root/autodl-tmp/models/Qwen3-8B-GRPO
 
 # 评测
 python -m src.eval.evaluate \
-    --model Qwen/Qwen2.5-Coder-7B-Instruct \
+    --model /root/autodl-tmp/models/Qwen3-8B \
     --mode multi_turn \
     --datasets mbpp_test humaneval
 ```
 
 ## 依赖
 
-核心依赖：`torch`, `transformers`, `datasets`, `verl`, `peft`, `pandas`, `pyarrow`
+核心依赖：`torch`, `transformers`, `datasets`, `verl`, `peft`, `accelerate`, `pandas`, `pyarrow`
 
-verl 仅在训练服务器需要安装；本地可以正常运行评测和测试。
+当前环境版本：verl 0.7.1, sglang 0.5.9, torch 2.9.1, transformers 4.57.1
+
+## Baseline（Qwen3-8B，no-think，训练前）
+
+| 数据集 | 模式 | pass@1 | passed/total | 额外指标 |
+|--------|------|--------|-------------|----------|
+| MBPP test | one-shot | **61.4%** | 307/500 | — |
+| MBPP test | multi-turn | **72.4%** | 362/500 | avg_turns=3.24, fix_rate=36.2% |
+| HumanEval | one-shot | **76.8%** | 126/164 | — |
+| HumanEval | multi-turn | **81.1%** | 133/164 | avg_turns=2.62, fix_rate=40.5% |
+
+Multi-turn 比 one-shot 提升：MBPP +11.0pp，HumanEval +4.3pp。
+模型已具备基础的多轮调试能力（fix_rate ~36-40%），GRPO 训练目标是进一步强化这个能力。
 
 ## 训练目标
 
-MBPP test pass@1 ≥ 75%（当前 one-shot baseline 69.6%），通过 agent 多轮调试能力超越单次生成。
+MBPP test multi-turn pass@1 ≥ 80%（当前 baseline 72.4%），同时提高 fix_rate 和降低 avg_turns。
