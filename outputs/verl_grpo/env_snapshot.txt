@@ -1,10 +1,10 @@
 ═══════════════════════════════════════════════════
   Training Environment Snapshot
-  2026-04-06 01:09:23
+  2026-04-23 01:34:04
 ═══════════════════════════════════════════════════
 
 ── Hardware ──
-Mon Apr  6 01:09:23 2026       
+Thu Apr 23 01:34:04 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.126.09             Driver Version: 580.126.09     CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -12,12 +12,12 @@ Mon Apr  6 01:09:23 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
-|   0  NVIDIA A800-SXM4-80GB          On  |   00000000:16:00.0 Off |                  Off |
-| N/A   27C    P0             61W /  400W |       0MiB /  81920MiB |      0%      Default |
+|   0  NVIDIA A800-SXM4-80GB          On  |   00000000:4D:00.0 Off |                  Off |
+| N/A   27C    P0             58W /  400W |       0MiB /  81920MiB |      0%      Default |
 |                                         |                        |             Disabled |
 +-----------------------------------------+------------------------+----------------------+
 |   1  NVIDIA A800-SXM4-80GB          On  |   00000000:8A:00.0 Off |                  Off |
-| N/A   28C    P0             58W /  400W |       0MiB /  81920MiB |      0%      Default |
+| N/A   40C    P0             62W /  400W |       0MiB /  81920MiB |      0%      Default |
 |                                         |                        |             Disabled |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -99,6 +99,9 @@ actor_rollout_ref:
     clip_ratio: 0.2
     grad_clip: 1.0
     use_torch_compile: false
+    checkpoint:
+      save_contents:
+        - model
     fsdp_config:
       param_offload: true
       optimizer_offload: true
@@ -156,5 +159,5 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 ── Memory ──
                total        used        free      shared  buff/cache   available
-Mem:           1.0Ti        19Gi       621Gi       1.2Gi       366Gi       979Gi
+Mem:           1.0Ti        71Gi       148Gi       8.3Gi       787Gi       919Gi
 Swap:             0B          0B          0B
