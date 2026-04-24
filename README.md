@@ -6,7 +6,7 @@
 
 ## 项目目标
 
-这个项目正在收敛成如下形态：
+这个项目当前形态如下：
 
 - 模型读取一道编程题，生成完整可执行代码
 - 它面对的是 OJ-like 环境，而不是一个泛化的执行代码工具
@@ -35,16 +35,20 @@
 
 ## 环境设计
 
-环境已经明确收敛到两类工具形态：
+环境已经固定为两类工具：
 
-- 公开测试调试动作
-- 正式提交 full judge 动作
+- `run_public_tests`：运行公开 stdin/stdout 测试，只提供调试反馈
+- `submit_solution`：运行 private/full judge，消耗一次正式提交
 
-虽然工具最终命名还没有冻结，但交互模型已经固定：
+交互规则：
 
 - train / val / test 共用同一套环境协议
 - 不同 split 的错误格式和交互语义保持一致
-- 需要支持题目级时间限制
+- 环境语义只限制 `max_submissions=5`
+- `max_tool_calls` 只是 rollout 工程保护，用来防止死循环，不是 OJ 规则
+- `run_public_tests` 不给 reward，只返回 observation
+- reward 以正式提交为主：accepted 为主奖励，failed submit 可按 private pass rate 给弱 shaped reward
+- 支持题目级时间限制
 - 内存限制后置，不作为第一阶段重点
 
 执行环境保持轻量：
@@ -52,15 +56,18 @@
 - 尽量直接使用主进程 Python 运行子进程代码
 - 尽量避免引入重第三方依赖的 benchmark 设计
 
-## 当前实现方向
+## 当前实现状态
 
 当前 e2e 主链路已经接到 OJ-like v1 协议：
 
 - `CodeProblem` 统一题目 schema
 - `run_public_tests` / `submit_solution` 两动作环境协议
-- `CodeContests` 导出 verl train/val parquet
+- `CodeContests` 导出 `codecontests_train/valid/test` parquet
 - `LiveCodeBench` 用作最终 eval/test 数据
-- one-shot 和 multi-turn 评测都通过同一套 private judge 判定
+- 主评测入口复用 verl validation，尽量和训练 rollout / tool / reward 保持一致
+- `src.eval.evaluate` 只保留为轻量本地 debug harness
+- 旧的 `execute_code` / `test_list` / 函数补全协议已经退出主链路
+- 旧 MBPP/HumanEval 输出已归档到 `archive/legacy_outputs/2026-04-24/`
 
 当前已经冻结的 v1 数据 schema 方向是：
 
@@ -72,13 +79,24 @@
 
 当前 schema 的 source of truth 在 `src/data/dataset.py`。
 
+环境协议的冻结说明在 `docs/env_protocol.md`，实现入口是 `src/env/tools.py`。
+相近项目的环境设计参考和后续生产化 checklist 在 `docs/env_design_references.md`。
+
 ## 常用命令
 
-准备 verl 数据：
+准备 verl 数据。推荐在实际训练服务器上生成，而不是依赖本地旧 parquet：
 
 ```bash
-python3 -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets
+python3 -m src.data.verl_dataset \
+  --data_dir /root/autodl-tmp/datasets
 ```
+
+标准输出文件是：
+
+- `data/verl/codecontests_train.parquet`
+- `data/verl/codecontests_valid.parquet`
+- `data/verl/codecontests_test.parquet`
+- `data/verl/livecodebench_test.parquet`
 
 同步生成 verl tool config：
 
@@ -86,7 +104,13 @@ python3 -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets
 python3 -m src.env.tools
 ```
 
-评测 LiveCodeBench：
+用 verl validation 跑和训练一致的 tool / rollout / reward 链路：
+
+```bash
+bash scripts/evaluate_with_verl.sh livecodebench_test /root/autodl-tmp/models/Qwen3-8B 1
+```
+
+可选：用轻量本地 harness 做快速调试。这个入口不作为主评测路径：
 
 ```bash
 python3 -m src.eval.evaluate \
@@ -96,12 +120,19 @@ python3 -m src.eval.evaluate \
   --max_samples 1
 ```
 
+说明：
+
+- `scripts/evaluate_with_verl.sh` 复用 `verl` 的 `main_ppo` validation 路径，行为更接近训练时 rollout
+- `src.eval.evaluate` 只保留为轻量、本地可调试的评测 harness
+- `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
+
 本地协议测试：
 
 ```bash
 python3 tests/test_verl_tools.py
 python3 tests/test_dataset_protocol.py
 python3 tests/test_e2e_protocol.py
+python3 -X pycache_prefix=/tmp/code-agent-pycache -m compileall src tests
 ```
 
 ## 仓库结构
@@ -110,22 +141,31 @@ python3 tests/test_e2e_protocol.py
 
 ```text
 src/
-  data/          数据集加载与内部题目 schema
-  env/           执行环境、工具接口与 sandbox
-  eval/          评测入口
-  verl_tools/    verl 工具适配层与 reward 侧衔接
-scripts/         训练 / 评测 / 数据准备入口
-configs/verl/    verl 配置
+  data/          数据集加载、OJ schema、verl parquet 导出
+  env/           OJ judge、两工具协议、sandbox
+  eval/          LiveCodeBench / CodeContests 评测入口
+  verl_tools/    verl BaseTool 适配层
+scripts/         训练、评测、数据准备入口
+configs/verl/    verl 训练与工具配置
 ```
 
 当前重点相关文件包括：
 
+- `docs/env_protocol.md`
+- `docs/env_design_references.md`
 - `src/data/dataset.py`
 - `src/data/verl_dataset.py`
 - `src/env/tools.py`
 - `src/env/sandbox.py`
+- `src/env/code_env.py`
+- `src/verl_tools/oj_tools.py`
+- `scripts/evaluate_with_verl.sh`
 - `src/eval/evaluate.py`
-- `src/verl_tools/`
+
+历史输出和旧实验记录在：
+
+- `archive/legacy_outputs/2026-04-24/`
+- `archive/`
 
 ## 快速开始
 

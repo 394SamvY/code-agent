@@ -2,8 +2,16 @@
 安全代码执行沙箱
 ================
 
-使用 subprocess 在独立进程中执行 Python 代码，
-提供 timeout 和 stdout/stderr 捕获。
+使用 subprocess 在独立进程中执行 Python 代码，并提供：
+
+- stdin 写入
+- stdout/stderr 捕获
+- timeout
+- return code
+- runtime 统计
+
+它是环境的最底层执行层，只负责“怎么跑代码”，不负责 OJ verdict、测试循环、
+submission limit 或 reward。
 """
 
 from __future__ import annotations
@@ -18,7 +26,11 @@ from dataclasses import dataclass
 
 @dataclass
 class ExecutionResult:
-    """代码执行结果."""
+    """代码执行结果。
+
+    这是 sandbox 层返回给 judge 层的原始执行信息。上层会再把它解释为
+    `accepted` / `wrong_answer` / `runtime_error` / `time_limit_exceeded`。
+    """
 
     stdout: str
     stderr: str
@@ -28,6 +40,7 @@ class ExecutionResult:
 
     @property
     def success(self) -> bool:
+        """Whether the subprocess exited normally without timeout."""
         return self.returncode == 0 and not self.timed_out
 
 
@@ -37,7 +50,7 @@ def execute_code(
     timeout: int | float = 5,
     max_output_chars: int = 4096,
 ) -> ExecutionResult:
-    """在子进程中安全执行 Python 代码.
+    """在子进程中执行 Python 代码。
 
     Args:
         code: 要执行的 Python 代码字符串
@@ -47,6 +60,13 @@ def execute_code(
 
     Returns:
         ExecutionResult 包含 stdout, stderr, returncode, timed_out
+
+    说明：
+
+    - 本函数是通用执行入口，既可以给 stdin/stdout 程序使用，也可以给“代码+测试断言”
+      这种模式使用。
+    - 当前实现是轻量 subprocess 隔离，不是强安全沙箱；后续如果切 Docker / remote
+      runner，接口最好保持不变。
     """
     # 创建临时 .py 文件，将代码字符串写入磁盘，以便用 subprocess 启动独立 python3 进程执行。
     # - mode="w": 文本写入模式
@@ -99,6 +119,7 @@ def execute_code(
             runtime_seconds=runtime_seconds,
         )
     except subprocess.TimeoutExpired as e:
+        # TimeoutExpired 可能携带部分 stdout/stderr。这里尽量保留它们，便于上层调试。
         stdout = e.stdout or ""
         stderr = e.stderr or ""
         if isinstance(stdout, bytes):
@@ -113,6 +134,8 @@ def execute_code(
             runtime_seconds=float(timeout),
         )
     except Exception as e:
+        # 这里捕获的是“环境执行失败”，例如子进程拉起异常，而不是用户代码中的 RE。
+        # 用户代码中的异常会体现在 returncode != 0 和 stderr 中。
         return ExecutionResult(
             stdout="",
             stderr=f"Execution error: {e}",
@@ -125,34 +148,17 @@ def execute_code(
         os.unlink(tmp_path)
 
 
-def execute_with_tests(
-    code: str,
-    test_code: str,
-    timeout: int | float = 5,
-) -> ExecutionResult:
-    """执行代码 + 测试用例.
-
-    将 code 和 test_code 拼接后执行。
-
-    Args:
-        code: 函数定义代码
-        test_code: 测试断言代码
-        timeout: 最大执行时间
-
-    Returns:
-        ExecutionResult
-    """
-    full_code = f"{code}\n\n{test_code}"
-    return execute_code(full_code, timeout=timeout)
-
-
 def execute_stdio(
     code: str,
     stdin: str,
     timeout: int | float = 5,
     max_output_chars: int = 4096,
 ) -> ExecutionResult:
-    """执行完整 stdin/stdout Python 程序."""
+    """执行完整 stdin/stdout Python 程序。
+
+    这是 OJ-like v1 主链路真正使用的入口。judge 层会把 `OJTestCase.input`
+    作为 `stdin` 传进来，再根据返回的 stdout/stderr/returncode 决定 verdict。
+    """
     return execute_code(
         code=code,
         stdin=stdin,

@@ -12,8 +12,8 @@ defaults:
 # ═══════════════════════════════════════════════════
 
 data:
-  train_files: ./data/verl/train.parquet
-  val_files: ./data/verl/val.parquet
+  train_files: ./data/verl/codecontests_train.parquet
+  val_files: ./data/verl/codecontests_valid.parquet
   train_batch_size: 128
   return_raw_chat: true
   apply_chat_template_kwargs:

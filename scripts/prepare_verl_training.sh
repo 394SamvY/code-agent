@@ -48,7 +48,22 @@ echo "  Log lvl: VERL_LOGGING_LEVEL=$VERL_LOGGING_LEVEL"
 echo ""
 
 # Step 1: 准备数据（如果尚未准备）
-if [ ! -f "$PROJECT_DIR/data/verl/train.parquet" ]; then
+REQUIRED_PARQUETS=(
+    "$PROJECT_DIR/data/verl/codecontests_train.parquet"
+    "$PROJECT_DIR/data/verl/codecontests_valid.parquet"
+    "$PROJECT_DIR/data/verl/codecontests_test.parquet"
+    "$PROJECT_DIR/data/verl/livecodebench_test.parquet"
+)
+
+MISSING_PARQUET=0
+for parquet_path in "${REQUIRED_PARQUETS[@]}"; do
+    if [ ! -f "$parquet_path" ]; then
+        MISSING_PARQUET=1
+        break
+    fi
+done
+
+if [ "$MISSING_PARQUET" -eq 1 ]; then
     echo "Preparing verl datasets..."
     python -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets
     echo ""

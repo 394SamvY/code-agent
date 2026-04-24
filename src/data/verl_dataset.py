@@ -93,47 +93,58 @@ def prepare_verl_datasets(
     output_dir: str = "./data/verl",
     data_dir: str | None = None,
     max_train_samples: int | None = None,
-    max_val_samples: int | None = None,
-    max_test_samples: int | None = None,
+    max_valid_samples: int | None = None,
+    max_codecontests_test_samples: int | None = None,
+    max_livecodebench_test_samples: int | None = None,
     max_submissions: int = 5,
     livecodebench_version_tag: str = "release_v6",
 ) -> dict[str, Path]:
-    """Prepare CodeContests train/val and LiveCodeBench test parquet files."""
+    """Prepare explicit CodeContests and LiveCodeBench parquet files."""
     output = Path(output_dir)
     codecontests_path = _dataset_local_path(data_dir, "codecontests")
     livecodebench_path = _dataset_local_path(data_dir, "livecodebench")
 
-    train = load_codecontests(
+    codecontests_train = load_codecontests(
         split="train",
         max_samples=max_train_samples,
         local_path=codecontests_path,
     )
-    val = load_codecontests(
-        split="validation",
-        max_samples=max_val_samples,
+    codecontests_valid = load_codecontests(
+        split="valid",
+        max_samples=max_valid_samples,
         local_path=codecontests_path,
     )
-    test = load_livecodebench(
+    codecontests_test = load_codecontests(
         split="test",
-        max_samples=max_test_samples,
+        max_samples=max_codecontests_test_samples,
+        local_path=codecontests_path,
+    )
+    livecodebench_test = load_livecodebench(
+        split="test",
+        max_samples=max_livecodebench_test_samples,
         local_path=livecodebench_path,
         version_tag=livecodebench_version_tag,
     )
 
     paths = {
-        "train": problems_to_verl_parquet(
-            train,
-            output / "train.parquet",
+        "codecontests_train": problems_to_verl_parquet(
+            codecontests_train,
+            output / "codecontests_train.parquet",
             max_submissions=max_submissions,
         ),
-        "val": problems_to_verl_parquet(
-            val,
-            output / "val.parquet",
+        "codecontests_valid": problems_to_verl_parquet(
+            codecontests_valid,
+            output / "codecontests_valid.parquet",
             max_submissions=max_submissions,
         ),
-        "test": problems_to_verl_parquet(
-            test,
-            output / "test.parquet",
+        "codecontests_test": problems_to_verl_parquet(
+            codecontests_test,
+            output / "codecontests_test.parquet",
+            max_submissions=max_submissions,
+        ),
+        "livecodebench_test": problems_to_verl_parquet(
+            livecodebench_test,
+            output / "livecodebench_test.parquet",
             max_submissions=max_submissions,
         ),
     }
@@ -145,8 +156,9 @@ def main() -> None:
     parser.add_argument("--output_dir", default="./data/verl")
     parser.add_argument("--data_dir", default=None)
     parser.add_argument("--max_train_samples", type=int, default=None)
-    parser.add_argument("--max_val_samples", type=int, default=None)
-    parser.add_argument("--max_test_samples", type=int, default=None)
+    parser.add_argument("--max_valid_samples", type=int, default=None)
+    parser.add_argument("--max_codecontests_test_samples", type=int, default=None)
+    parser.add_argument("--max_livecodebench_test_samples", type=int, default=None)
     parser.add_argument("--max_submissions", type=int, default=5)
     parser.add_argument("--livecodebench_version_tag", default="release_v6")
     args = parser.parse_args()
@@ -155,8 +167,9 @@ def main() -> None:
         output_dir=args.output_dir,
         data_dir=args.data_dir,
         max_train_samples=args.max_train_samples,
-        max_val_samples=args.max_val_samples,
-        max_test_samples=args.max_test_samples,
+        max_valid_samples=args.max_valid_samples,
+        max_codecontests_test_samples=args.max_codecontests_test_samples,
+        max_livecodebench_test_samples=args.max_livecodebench_test_samples,
         max_submissions=args.max_submissions,
         livecodebench_version_tag=args.livecodebench_version_tag,
     )

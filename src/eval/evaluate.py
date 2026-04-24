@@ -289,7 +289,7 @@ def load_eval_dataset(
     dataset_name: str,
     max_samples: int | None = None,
     data_dir: str | None = None,
-    codecontests_split: str = "validation",
+    codecontests_split: str = "valid",
     livecodebench_version_tag: str = "release_v6",
 ) -> list[CodeProblem]:
     if dataset_name == "livecodebench":
@@ -321,7 +321,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=None)
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--data_dir", type=str, default=None)
-    parser.add_argument("--codecontests_split", type=str, default="validation", choices=["train", "validation", "test"])
+    parser.add_argument("--codecontests_split", type=str, default="valid", choices=["train", "valid", "test"])
     parser.add_argument("--livecodebench_version_tag", type=str, default="release_v6")
     parser.add_argument("--sglang_url", type=str, default="http://localhost:30000/v1")
     parser.add_argument("--enable_thinking", action="store_true", default=False)

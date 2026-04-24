@@ -17,17 +17,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-try:
-    from datasets import Dataset
-except ModuleNotFoundError:
-    class Dataset:
-        @classmethod
-        def from_dict(cls, columns):
-            keys = list(columns)
-            return [
-                {key: columns[key][index] for key in keys}
-                for index in range(len(columns[keys[0]]))
-            ]
+from datasets import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -176,7 +166,7 @@ def test_load_livecodebench_parses_structured_tests():
 
 def test_load_codecontests_filters_and_merges_generated_tests():
     with patch.object(dataset_mod, "load_dataset", side_effect=_fake_load_dataset):
-        problems = dataset_mod.load_codecontests(split="validation")
+        problems = dataset_mod.load_codecontests(split="valid")
 
     assert len(problems) == 1
     problem = problems[0]
@@ -195,14 +185,14 @@ def test_load_codecontests_filters_and_merges_generated_tests():
     assert problem.time_limit_seconds == 1.5
     assert problem.difficulty == "MEDIUM"
     assert problem.metadata["source"] == "CODEFORCES"
-    assert problem.metadata["original_split"] == "validation"
+    assert problem.metadata["original_split"] == "valid"
     assert problem.metadata["memory_limit_bytes"] == 256_000_000
     assert problem.metadata["num_generated_tests"] == 1
 
     print("[PASS] test_load_codecontests_filters_and_merges_generated_tests")
 
 
-def test_load_codecontests_uses_valid_split_for_validation():
+def test_load_codecontests_uses_valid_split():
     seen_splits: list[str] = []
 
     def _capturing_loader(*args, **kwargs):
@@ -210,11 +200,11 @@ def test_load_codecontests_uses_valid_split_for_validation():
         return _fake_load_dataset(*args, **kwargs)
 
     with patch.object(dataset_mod, "load_dataset", side_effect=_capturing_loader):
-        dataset_mod.load_codecontests(split="validation", max_samples=1)
+        dataset_mod.load_codecontests(split="valid", max_samples=1)
 
     assert seen_splits == ["valid"]
 
-    print("[PASS] test_load_codecontests_uses_valid_split_for_validation")
+    print("[PASS] test_load_codecontests_uses_valid_split")
 
 
 def test_dataset_loader_registry():
@@ -229,6 +219,6 @@ if __name__ == "__main__":
     test_codeproblem_defaults()
     test_load_livecodebench_parses_structured_tests()
     test_load_codecontests_filters_and_merges_generated_tests()
-    test_load_codecontests_uses_valid_split_for_validation()
+    test_load_codecontests_uses_valid_split()
     test_dataset_loader_registry()
     print("\nAll tests passed!")

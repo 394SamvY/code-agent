@@ -2,7 +2,15 @@
 OJ-like agent tools
 ===================
 
-v1 exposes two actions:
+本文件定义 OJ-like v1 的工具协议和 judge 逻辑。
+
+它处在环境的中间层：
+
+- `CodeEnvironment` 负责管理一道题的一次 episode 状态；
+- 本文件负责工具语义、判题、observation 格式和 reward；
+- `sandbox.py` 负责真正启动 Python 子进程执行代码。
+
+v1 只暴露两个 actions：
 
 - run_public_tests: debug against public stdin/stdout cases.
 - submit_solution: run the private/full judge.
@@ -26,12 +34,15 @@ VERDICT_SYNTAX_ERROR = "syntax_error"
 VERDICT_NO_TESTS = "no_tests"
 VERDICT_SUBMISSION_LIMIT_EXCEEDED = "submission_limit_exceeded"
 
+# 环境语义上的终止 verdict。只有 accepted 或提交次数耗尽会结束一轮正式交互。
 TERMINAL_VERDICTS = {
     VERDICT_ACCEPTED,
     VERDICT_SUBMISSION_LIMIT_EXCEEDED,
 }
 
 
+# 这是提供给模型/verl 的公开工具 schema。字段名和描述应与真实工具行为保持一致，
+# 否则模型看到的接口和本地执行语义会漂移。
 TOOLS_SCHEMA = [
     {
         "type": "function",
@@ -77,12 +88,25 @@ TOOLS_SCHEMA = [
 
 
 def normalize_output(text: str) -> str:
-    """Normalize stdout/expected text before exact comparison."""
+    """Normalize stdout/expected text before exact comparison.
+
+    v1 规则很简单：
+
+    - 统一换行符
+    - 去掉末尾空白
+    - 然后做精确字符串比较
+
+    这里故意不做 special judge、数值容忍或更激进的空白忽略。
+    """
     return text.replace("\r\n", "\n").replace("\r", "\n").rstrip()
 
 
 def parse_oj_tests(raw: Any) -> list[OJTestCase]:
-    """Parse tests from CodeProblem objects, JSON strings, or plain dicts."""
+    """Parse tests from CodeProblem objects, JSON strings, or plain dicts.
+
+    这个 helper 主要服务 verl / tool adapter 场景：有时 tests 已经是
+    `list[OJTestCase]`，有时来自 parquet/JSON，需要恢复成统一结构。
+    """
     if raw in (None, "", []):
         return []
 
@@ -106,10 +130,16 @@ def parse_oj_tests(raw: Any) -> list[OJTestCase]:
 
 
 def serialize_oj_tests(tests: list[OJTestCase]) -> list[dict[str, str]]:
+    """Serialize `OJTestCase` into JSON-friendly dicts for parquet / tool kwargs."""
     return [{"input": test.input, "output": test.output} for test in tests]
 
 
 def _syntax_error_result(action: str, tests: list[OJTestCase], error: SyntaxError) -> dict[str, Any]:
+    """Build the canonical judge result for syntax errors.
+
+    语法错误在真正执行前就能确定，因此不会进入 `sandbox.execute_stdio()`。
+    为了让 observation 和日志结构保持一致，这里仍返回标准的 judge result schema。
+    """
     first_input = tests[0].input if tests else ""
     first_expected = tests[0].output if tests else ""
     first_failed = {
@@ -135,6 +165,7 @@ def _syntax_error_result(action: str, tests: list[OJTestCase], error: SyntaxErro
 
 
 def _no_tests_result(action: str) -> dict[str, Any]:
+    """Build the canonical judge result for actions without available tests."""
     return {
         "action": action,
         "verdict": VERDICT_NO_TESTS,
@@ -151,7 +182,18 @@ def run_oj_judge(
     action: str,
     timeout: int | float = 5,
 ) -> dict[str, Any]:
-    """Run code on stdin/stdout tests and return the structured judge result."""
+    """Run code on stdin/stdout tests and return the structured judge result.
+
+    这是本环境真正的“判题核心”：
+
+    1. 先用 `compile()` 做语法检查
+    2. 再逐个测试调用 `sandbox.execute_stdio()`
+    3. 根据 timeout / returncode / stdout 比较得到 per-case verdict
+    4. 汇总出 judge-level verdict、passed 数、first_failed 和完整 tests 列表
+
+    注意：它只负责“给定代码 + 给定 tests 怎么判”，不负责 submission limit、
+    reward、tool history 或 observation 文本，这些都在更外层处理。
+    """
     try:
         compile(code, "<solution>", "exec")
     except SyntaxError as e:
@@ -164,6 +206,8 @@ def run_oj_judge(
     passed = 0
 
     for index, test in enumerate(tests, start=1):
+        # 真正的代码执行在 sandbox 层。这里拿回 stdout/stderr/returncode 后，
+        # 再用环境协议映射成 OJ verdict。
         result = execute_stdio(code, stdin=test.input, timeout=timeout)
         if result.timed_out:
             verdict = VERDICT_TIME_LIMIT_EXCEEDED
@@ -209,7 +253,8 @@ def run_oj_judge(
     }
 
 
-def _clip(text: Any, limit: int = 1000) -> str:
+def _clip(text: Any, limit: int = 2000) -> str:
+    """Clip long stdout/stderr blocks before showing them to the model."""
     value = "" if text is None else str(text)
     if len(value) <= limit:
         return value
@@ -217,6 +262,7 @@ def _clip(text: Any, limit: int = 1000) -> str:
 
 
 def _format_case(case: dict[str, Any]) -> str:
+    """Render one failed case into human-readable observation text."""
     return (
         f"Case {case['index']} FAILED ({case['verdict']}):\n"
         f"Input:\n{_clip(case.get('input'))}\n"
@@ -231,7 +277,13 @@ def format_judge_observation(
     *,
     include_all_failures: bool,
 ) -> str:
-    """Format a structured judge result into the tool observation text."""
+    """Format a structured judge result into the tool observation text.
+
+    结构化 result 是主接口；这个函数只负责把它压成模型可读文本。
+
+    `run_public_tests` 会展开所有失败 public case，便于调试；
+    `submit_solution` 默认只展开第一条失败 private case，避免反馈过量。
+    """
     action = result["action"]
     verdict = result["verdict"]
     passed = result["passed"]
@@ -276,6 +328,11 @@ def reward_for_result(result: dict[str, Any]) -> float:
 
 
 def tool_run_public_tests(env_state: dict[str, Any], code: str) -> str:
+    """Execute the public-test tool against the current environment state.
+
+    这个函数既被 `CodeEnvironment.execute_tool()` 调用，也被 verl tool adapter 复用。
+    它负责更新共享状态，并返回 observation text 给上层 agent。
+    """
     env_state["current_code"] = code
     result = run_oj_judge(
         code=code,
@@ -289,6 +346,14 @@ def tool_run_public_tests(env_state: dict[str, Any], code: str) -> str:
 
 
 def tool_submit_solution(env_state: dict[str, Any], code: str) -> str:
+    """Execute the formal submission tool against the current environment state.
+
+    与 `tool_run_public_tests` 的关键区别：
+
+    - 会检查并消耗 `submission_count`
+    - 使用 `private_tests`
+    - observation 默认只展开第一条失败 private case
+    """
     if env_state["submission_count"] >= env_state["max_submissions"]:
         result = {
             "action": "submit_solution",
@@ -302,6 +367,7 @@ def tool_submit_solution(env_state: dict[str, Any], code: str) -> str:
         env_state["last_result"] = result
         return format_judge_observation(result, include_all_failures=False)
 
+    # 提交次数只有在真正进入判题前才增加；public tests 不会触碰这个计数器。
     env_state["submission_count"] += 1
     env_state["current_code"] = code
     result = run_oj_judge(
@@ -323,6 +389,8 @@ TOOL_EXECUTORS: dict[str, Callable[..., str]] = {
 }
 
 
+# 工具名到 verl BaseTool 类的映射。这样 `tool_config.yaml` 可以直接从本文件生成，
+# 避免 schema 和适配类路径手写漂移。
 _TOOL_NAME_TO_VERL_CLASS: dict[str, str] = {
     "run_public_tests": "src.verl_tools.oj_tools.RunPublicTestsTool",
     "submit_solution": "src.verl_tools.oj_tools.SubmitSolutionTool",
@@ -330,7 +398,7 @@ _TOOL_NAME_TO_VERL_CLASS: dict[str, str] = {
 
 
 def generate_tool_config_yaml() -> str:
-    """Generate verl tool_config.yaml from the tool schemas."""
+    """Generate verl `tool_config.yaml` from the in-code tool schemas."""
     tools = []
     for schema in TOOLS_SCHEMA:
         name = schema["function"]["name"]
@@ -342,39 +410,8 @@ def generate_tool_config_yaml() -> str:
             }
         )
 
-    try:
-        import yaml
-    except ModuleNotFoundError:
-        return _generate_tool_config_yaml_fallback(tools)
+    import yaml
     return yaml.dump({"tools": tools}, default_flow_style=False, sort_keys=False, allow_unicode=True)
-
-
-def _generate_tool_config_yaml_fallback(tools: list[dict[str, Any]]) -> str:
-    lines = ["tools:"]
-    for tool in tools:
-        function = tool["tool_schema"]["function"]
-        code_desc = function["parameters"]["properties"]["code"]["description"]
-        lines.extend(
-            [
-                f"- class_name: {tool['class_name']}",
-                "  config:",
-                f"    type: {tool['config']['type']}",
-                "  tool_schema:",
-                f"    type: {tool['tool_schema']['type']}",
-                "    function:",
-                f"      name: {function['name']}",
-                f"      description: {function['description']}",
-                "      parameters:",
-                "        type: object",
-                "        properties:",
-                "          code:",
-                "            type: string",
-                f"            description: {code_desc}",
-                "        required:",
-                "        - code",
-            ]
-        )
-    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
