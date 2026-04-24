@@ -148,8 +148,43 @@ Step 6: reward=0.763  perfect=72%  zero=23%
 
 ---
 
-## Run 6 — 待运行
+## Run 6 — `train_20260423_013404.log` | `config_20260423_013404.yaml`
+
+**结果**: 训练 14/14 steps 完成；最终 validation reward 约 78.22%；日志收尾有 DataLoader worker killed 噪声，但随后打印 `Training complete`
+
+**走到**: initial validation ✅ → Step 1~14 训练 ✅ → checkpoint 保存 ✅（日志显示 rank0/rank1 model 保存）→ final validation ✅ → 收尾 worker killed ⚠️
 
 **修复**:
 1. `actor.checkpoint.save_contents: [model]` — 只保存模型权重（~16GB），不保存优化器状态
 2. 清理 Run 5 写坏的 checkpoint（35GB）：`rm -rf outputs/verl_grpo/checkpoints/*`
+
+**关键日志**:
+- Step 7 保存：`global_step_7/actor/model_world_size_2_rank_0.pt` 和 rank 1 保存成功
+- Step 14 保存：`global_step_14/actor/model_world_size_2_rank_0.pt` 和 rank 1 保存成功
+- 旧 checkpoint 清理：`Checkpoint manager remove previous save local path: .../global_step_7/actor`
+- 本地未同步 `outputs/verl_grpo/checkpoints/`，需要在远端 `/root/autodl-tmp/code-agent/outputs/verl_grpo/checkpoints/global_step_14/actor/` 复核
+
+**Validation**:
+```
+Initial: reward=0.7815  score=0.7815  exec_reward=0.7593  fix_reward=0.0222
+Final:   reward=0.7822  score=0.7822  exec_reward=0.7556  fix_reward=0.0267
+```
+
+**训练趋势（14 步 rollout data，本地每步 512 条）**:
+```
+Step  1: score=0.776  perfect=72.7%  zero=21.9%  calls=1.47
+Step  5: score=0.827  perfect=78.7%  zero=16.8%  calls=1.38
+Step  7: score=0.758  perfect=72.3%  zero=23.6%  calls=1.49
+Step 11: score=0.858  perfect=81.1%  zero=15.6%  calls=1.52
+Step 14: score=0.852  perfect=80.9%  zero=15.0%  calls=1.50
+```
+
+**判断**:
+- rollout 训练样本均值后半段有上升，step 11/14 的 perfect 超过 80%
+- held-out validation 从 0.7815 到 0.7822，几乎没有提升；需要正式 eval 判断是否泛化
+- 日志中仍有少量 `Failed to decode tool call`，但未阻断训练
+
+**下一步**:
+1. 远端确认 `global_step_14/actor` checkpoint 完整
+2. 导出 HF 模型并跑 MBPP/HumanEval multi-turn 正式评测
+3. 如果正式评测无提升，优先分析数据重复、reward 信号和训练集/验证集分布，而不是直接延长训练

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Agentic GRPO Training with verl
+# Prepare and launch Agentic GRPO training with verl
 #
 # 用法:
-#   bash scripts/train_verl.sh              # 默认 2 GPU + Qwen3-8B 全量微调
-#   bash scripts/train_verl.sh 4            # 指定 GPU 数量
-#   bash scripts/train_verl.sh 2 grpo_qwen_7b  # 指定配置名
+#   bash scripts/prepare_verl_training.sh                 # 默认 2 GPU + Qwen3-8B 全量微调
+#   bash scripts/prepare_verl_training.sh 4               # 指定 GPU 数量
+#   bash scripts/prepare_verl_training.sh 2 grpo_qwen_7b  # 指定配置名
 #
 # 前置步骤:
 #   1. pip install verl sglang pandas pyarrow
@@ -50,7 +50,7 @@ echo ""
 # Step 1: 准备数据（如果尚未准备）
 if [ ! -f "$PROJECT_DIR/data/verl/train.parquet" ]; then
     echo "Preparing verl datasets..."
-    python -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets --no_apps
+    python -m src.data.verl_dataset --data_dir /root/autodl-tmp/datasets
     echo ""
 fi
 
@@ -62,7 +62,11 @@ echo ""
 # Step 3: 启动训练
 export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
 
-python3 "$PROJECT_DIR/scripts/run_verl.py" \
+# 用 verl_main_wrapper.py 而不是直接 `python -m verl.trainer.main_ppo`，是为了在
+# verl 启动前 patch 标准库 json，避免 numpy 指标写 JSON 时崩溃。
+# 下面这些参数会保留在 sys.argv 里，由 verl 的 Hydra main 读取：
+# --config-path / --config-name 是 Hydra 配置入口，trainer.n_gpus_per_node 是覆盖项。
+python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     --config-path="$CONFIG_PATH" \
     --config-name="$CONFIG_NAME" \
     trainer.n_gpus_per_node=$NUM_GPUS

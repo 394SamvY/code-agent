@@ -1,9 +1,4 @@
-"""
-Custom compute_score for verl GRPO training.
-
-verl's reward manager calls this function after each rollout trajectory.
-The tool_rewards from ExecuteCodeTool.execute() are available in extra_info.
-"""
+"""Custom compute_score for OJ-like two-action GRPO training."""
 
 from __future__ import annotations
 
@@ -23,25 +18,16 @@ def compute_score(
     if not tool_rewards:
         return {
             "score": 0.0,
-            "exec_reward": 0.0,
-            "fix_reward": 0.0,
+            "tool_reward": 0.0,
             "num_tool_calls": 0,
         }
 
-    last_step_reward = tool_rewards[-1]
-    exec_reward = min(last_step_reward / 0.1, 1.0)
-
-    fix_reward = 0.0
-    if len(tool_rewards) >= 2:
-        first_pass_rate = min(tool_rewards[0] / 0.1, 1.0)
-        if first_pass_rate < 1.0 and exec_reward >= 1.0:
-            fix_reward = 0.2
-
-    total = exec_reward + fix_reward
+    # Tools already encode the OJ reward policy:
+    # public tests = 0, failed submits <= 0.2, accepted submit = 1.0.
+    total = max(float(reward) for reward in tool_rewards)
 
     return {
         "score": total,
-        "exec_reward": exec_reward,
-        "fix_reward": fix_reward,
+        "tool_reward": total,
         "num_tool_calls": len(tool_rewards),
     }

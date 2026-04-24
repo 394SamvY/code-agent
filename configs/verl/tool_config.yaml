@@ -1,18 +1,33 @@
 tools:
-- class_name: src.verl_tools.execute_code_tool.ExecuteCodeTool
+- class_name: src.verl_tools.oj_tools.RunPublicTestsTool
   config:
     type: native
   tool_schema:
     type: function
     function:
-      name: execute_code
-      description: Execute Python code and run all test cases. Returns pass/fail count
-        with detailed error messages and traceback for failures.
+      name: run_public_tests
+      description: Run the complete Python stdin/stdout program on the public tests. Use this to debug before submitting.
       parameters:
         type: object
         properties:
           code:
             type: string
-            description: The complete Python function code.
+            description: The complete Python program that reads stdin and writes stdout.
+        required:
+        - code
+- class_name: src.verl_tools.oj_tools.SubmitSolutionTool
+  config:
+    type: native
+  tool_schema:
+    type: function
+    function:
+      name: submit_solution
+      description: Submit the complete Python stdin/stdout program to the full judge. This runs private tests and consumes one submission attempt.
+      parameters:
+        type: object
+        properties:
+          code:
+            type: string
+            description: The complete Python program that reads stdin and writes stdout.
         required:
         - code

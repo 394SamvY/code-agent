@@ -68,10 +68,15 @@ ds = load_dataset('google-research-datasets/mbpp', 'full')
 ds.save_to_disk('$DATASETS_DIR/mbpp_full')
 print(f'  MBPP: train={len(ds[\"train\"])}, val={len(ds[\"validation\"])}, test={len(ds[\"test\"])}')
 
-print('  下载 HumanEval...')
-ds = load_dataset('openai/openai_humaneval')
-ds.save_to_disk('$DATASETS_DIR/humaneval')
-print(f'  HumanEval: {len(ds[\"test\"])} 题')
+print('  下载 MBPP+...')
+ds = load_dataset('evalplus/mbppplus')
+ds.save_to_disk('$DATASETS_DIR/mbppplus')
+print(f'  MBPP+: {len(ds[\"test\"])} 题')
+
+print('  下载 HumanEval+...')
+ds = load_dataset('evalplus/humanevalplus')
+ds.save_to_disk('$DATASETS_DIR/humanevalplus')
+print(f'  HumanEval+: {len(ds[\"test\"])} 题')
 
 print('  数据集下载完成')
 "
@@ -90,7 +95,8 @@ echo "│   ├── Qwen2.5-Coder-0.5B-Instruct/"
 echo "│   └── Qwen2.5-Coder-7B-Instruct/"
 echo "└── datasets/"
 echo "    ├── mbpp_full/"
-echo "    └── humaneval/"
+echo "    ├── mbppplus/"
+echo "    └── humanevalplus/"
 echo ""
 echo "下一步：提交 GPU 任务"
 echo "  sbatch -N 1 -n 6 --gres=gpu:1 -p <你的分区> -A <你的account> scripts/run_baseline_slurm.sh"

@@ -1,267 +1,405 @@
 """
-数据集加载
-==========
+OJ-like 数据 schema 与 loader
+============================
 
-加载 MBPP / HumanEval / APPS 数据集并转换为统一格式。
+Phase 1 只为两套主数据集建立统一协议：
+
+- CodeContests：训练 / 开发验证
+- LiveCodeBench：最终测试
+
+当前 v1 schema 明确采用结构化测试用例表示，并且只支持 stdin/stdout。
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
-from dataclasses import dataclass
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+import zlib
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+try:
+    from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+except ModuleNotFoundError:
+    Dataset = Any
+
+    class DatasetDict(dict):
+        pass
+
+    def load_dataset(*args: Any, **kwargs: Any) -> Any:
+        raise ModuleNotFoundError("Install the 'datasets' package to load datasets.")
+
+    def load_from_disk(*args: Any, **kwargs: Any) -> Any:
+        raise ModuleNotFoundError("Install the 'datasets' package to load datasets.")
+
+
+DatasetName = Literal["codecontests", "livecodebench"]
+DatasetSplit = Literal["train", "validation", "test"]
+
+_CODECONTESTS_SOURCE_MAP = {
+    0: "UNKNOWN_SOURCE",
+    1: "CODECHEF",
+    2: "CODEFORCES",
+    3: "HACKEREARTH",
+    4: "CODEJAM",
+    6: "ATCODER",
+    7: "AIZU",
+}
+
+_CODECONTESTS_DIFFICULTY_MAP = {
+    0: "UNKNOWN_DIFFICULTY",
+    1: "EASY",
+    2: "MEDIUM",
+    3: "HARD",
+    4: "HARDER",
+    5: "HARDEST",
+    6: "EXTERNAL",
+    7: "A",
+    8: "B",
+    9: "C",
+    10: "D",
+    11: "E",
+    12: "F",
+    13: "G",
+    14: "H",
+    15: "I",
+    16: "J",
+    17: "K",
+    19: "L",
+    20: "M",
+    21: "N",
+    22: "O",
+    23: "P",
+    24: "Q",
+    25: "R",
+    26: "S",
+    27: "T",
+    28: "U",
+    29: "V",
+}
+
+_CODECONTESTS_LANGUAGE_MAP = {
+    0: "UNKNOWN_LANGUAGE",
+    1: "PYTHON",
+    2: "CPP",
+    3: "PYTHON3",
+    4: "JAVA",
+}
+
+
+@dataclass(frozen=True)
+class OJTestCase:
+    """结构化 OJ 测试用例，仅支持 stdin/stdout."""
+
+    input: str
+    output: str
 
 
 @dataclass
 class CodeProblem:
-    """统一的编程题格式."""
+    """统一后的 OJ 编程题 schema."""
 
     task_id: str
-    prompt: str            # 题目描述
-    test_list: list[str]   # 测试用例（assert 语句列表）
-    entry_point: str       # 函数入口名（HumanEval 有，MBPP 可能为空）
-    canonical_solution: str = ""  # 标准答案（仅评估时参考）
+    dataset: DatasetName
+    problem_statement: str
+    title: str | None = None
+    starter_code: str = ""
+    public_tests: list[OJTestCase] = field(default_factory=list)
+    private_tests: list[OJTestCase] = field(default_factory=list)
+    time_limit_seconds: float | None = None
+    reference_solutions: list[str] = field(default_factory=list)
+    difficulty: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# MBPP
-# ---------------------------------------------------------------------------
+def _select_split(
+    dataset_name: str,
+    split: str,
+    local_path: str | None = None,
+    **load_kwargs: Any,
+) -> Dataset:
+    """优先从本地读取，否则从 HF 加载指定 split."""
+    if local_path and os.path.exists(local_path):
+        ds_all = load_from_disk(local_path)
+        if isinstance(ds_all, DatasetDict):
+            if split in ds_all:
+                return ds_all[split]
+            if split == "valid" and "validation" in ds_all:
+                return ds_all["validation"]
+            if split == "validation" and "valid" in ds_all:
+                return ds_all["valid"]
+            raise KeyError(f"Split '{split}' not found in local dataset: {list(ds_all.keys())}")
+        return ds_all
 
-def load_mbpp(
-    version: str = "full",
-    split: str = "train",
+    return load_dataset(dataset_name, split=split, **load_kwargs)
+
+
+def _normalize_codecontests_split(split: DatasetSplit) -> str:
+    if split == "validation":
+        return "valid"
+    return split
+
+
+def _stable_task_id(prefix: str, *parts: str) -> str:
+    joined = "\n".join(parts)
+    digest = hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}/{digest}"
+
+
+def _normalize_label(value: Any, value_map: dict[int, str]) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value_map.get(value, str(value))
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _parse_duration_seconds(raw: Any) -> float | None:
+    if raw in (None, "", {}):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, dict):
+        seconds = float(raw.get("seconds", 0) or 0)
+        nanos = float(raw.get("nanos", 0) or 0)
+        return seconds + nanos / 1_000_000_000
+    raise TypeError(f"Unsupported time_limit payload: {type(raw)!r}")
+
+
+def _parse_test_dict(raw: Any) -> list[OJTestCase]:
+    """解析 CodeContests 风格的测试表示."""
+    if raw in (None, "", []):
+        return []
+
+    if isinstance(raw, dict):
+        inputs = raw.get("input", []) or []
+        outputs = raw.get("output", []) or []
+        if len(inputs) != len(outputs):
+            raise ValueError("Mismatched CodeContests test lengths between input and output")
+        return [OJTestCase(input=str(inp), output=str(out)) for inp, out in zip(inputs, outputs)]
+
+    if isinstance(raw, list):
+        cases: list[OJTestCase] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                raise TypeError(f"Unsupported CodeContests test case item: {type(item)!r}")
+            cases.append(
+                OJTestCase(
+                    input=str(item.get("input", "")),
+                    output=str(item.get("output", "")),
+                )
+            )
+        return cases
+
+    raise TypeError(f"Unsupported CodeContests tests payload: {type(raw)!r}")
+
+
+def _decode_json_string(raw: str) -> Any:
+    stripped = raw.strip()
+    if not stripped:
+        return []
+
+    if stripped.startswith("[") or stripped.startswith("{"):
+        return json.loads(stripped)
+
+    # 某些 LCB 变体会把隐藏测试存为 base64(zlib(json)) 字符串。
+    decoded = base64.b64decode(stripped)
+    inflated = zlib.decompress(decoded).decode("utf-8")
+    return json.loads(inflated)
+
+
+def _parse_lcb_tests(raw: Any) -> list[OJTestCase]:
+    """解析 LiveCodeBench 的 public/private test strings."""
+    if raw in (None, "", []):
+        return []
+
+    if isinstance(raw, str):
+        raw = _decode_json_string(raw)
+
+    if isinstance(raw, dict):
+        raw = [raw]
+
+    if not isinstance(raw, list):
+        raise TypeError(f"Unsupported LiveCodeBench tests payload: {type(raw)!r}")
+
+    cases: list[OJTestCase] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise TypeError(f"Unsupported LiveCodeBench test case item: {type(item)!r}")
+        testtype = item.get("testtype", "stdin")
+        if testtype != "stdin":
+            raise ValueError(f"Unsupported LiveCodeBench test type in v1 schema: {testtype}")
+        cases.append(
+            OJTestCase(
+                input=str(item.get("input", "")),
+                output=str(item.get("output", "")),
+            )
+        )
+    return cases
+
+
+def _iter_solutions(raw: Any) -> list[tuple[str | None, str]]:
+    """提取 (language, solution) 序列，兼容 dict-of-lists / list-of-dicts."""
+    if raw in (None, "", []):
+        return []
+
+    if isinstance(raw, dict):
+        languages = raw.get("language", []) or []
+        solutions = raw.get("solution", []) or []
+        if len(languages) != len(solutions):
+            raise ValueError("Mismatched solutions lengths between language and solution")
+        pairs = zip(languages, solutions)
+    elif isinstance(raw, list):
+        pairs = ((item.get("language"), item.get("solution", "")) for item in raw)
+    else:
+        raise TypeError(f"Unsupported solutions payload: {type(raw)!r}")
+
+    normalized: list[tuple[str | None, str]] = []
+    for language, solution in pairs:
+        if solution in (None, ""):
+            continue
+        if isinstance(language, int):
+            label = _CODECONTESTS_LANGUAGE_MAP.get(language, str(language))
+        elif isinstance(language, str):
+            label = language.upper()
+        else:
+            label = str(language) if language is not None else None
+        normalized.append((label, str(solution)))
+    return normalized
+
+
+def _extract_python_references(raw: Any) -> list[str]:
+    solutions = _iter_solutions(raw)
+    py3 = [solution for language, solution in solutions if language == "PYTHON3"]
+    py2 = [solution for language, solution in solutions if language == "PYTHON"]
+    return py3 + py2
+
+
+def _is_stdio_problem(row: dict[str, Any]) -> bool:
+    return not row.get("input_file") and not row.get("output_file")
+
+
+def load_codecontests(
+    split: DatasetSplit = "train",
     max_samples: int | None = None,
     local_path: str | None = None,
 ) -> list[CodeProblem]:
-    """加载 MBPP 数据集.
-
-    Args:
-        version: "full" 或 "sanitized"
-        split: "train" / "validation" / "test"
-        max_samples: 限制样本数
-        local_path: 本地缓存路径（无外网环境使用）
-
-    Returns:
-        CodeProblem 列表
-    """
-    if local_path and os.path.exists(local_path):
-        ds_all = load_from_disk(local_path)
-        ds = ds_all[split] if isinstance(ds_all, DatasetDict) else ds_all
-    else:
-        ds = load_dataset("google-research-datasets/mbpp", version, split=split)
-    if max_samples is not None:
-        ds = ds.select(range(min(max_samples, len(ds))))
+    """加载 CodeContests 并映射到统一 schema."""
+    hf_split = _normalize_codecontests_split(split)
+    ds = _select_split("deepmind/code_contests", split=hf_split, local_path=local_path)
 
     problems: list[CodeProblem] = []
     for row in ds:
-        desc = row.get("text") or row.get("prompt", "")
-        tests = row.get("test_list", [])
-        # 将第一个测试用例加入 prompt，让模型知道函数名和参数格式
-        # 参考 bigcode-evaluation-harness 的做法
-        if tests:
-            desc = f"{desc}\n{tests[0]}"
-        problems.append(CodeProblem(
-            task_id=f"mbpp/{row['task_id']}",
-            prompt=desc,
-            test_list=tests,
-            entry_point="",
-            canonical_solution=row.get("code", ""),
-        ))
-    return problems
+        if not _is_stdio_problem(row):
+            continue
 
+        reference_solutions = _extract_python_references(row.get("solutions"))
+        if not reference_solutions:
+            continue
 
-# ---------------------------------------------------------------------------
-# HumanEval
-# ---------------------------------------------------------------------------
+        public_tests = _parse_test_dict(row.get("public_tests"))
+        private_tests = _parse_test_dict(row.get("private_tests"))
+        generated_tests = _parse_test_dict(row.get("generated_tests"))
 
-def load_humaneval(
-    max_samples: int | None = None,
-    local_path: str | None = None,
-) -> list[CodeProblem]:
-    """加载 HumanEval 数据集.
+        title = row.get("name") or None
+        description = row.get("description", "")
+        task_id = _stable_task_id("codecontests", title or "", description)
 
-    Args:
-        max_samples: 限制样本数
-        local_path: 本地缓存路径（无外网环境使用）
-
-    Returns:
-        CodeProblem 列表
-    """
-    if local_path and os.path.exists(local_path):
-        ds_all = load_from_disk(local_path)
-        ds = ds_all["test"] if isinstance(ds_all, DatasetDict) else ds_all
-    else:
-        ds = load_dataset("openai/openai_humaneval", split="test")
-    if max_samples is not None:
-        ds = ds.select(range(min(max_samples, len(ds))))
-
-    problems: list[CodeProblem] = []
-    for row in ds:
-        test_code = row["test"]
-        entry = row["entry_point"]
-        test_calls = f"{test_code}\ncheck({entry})"
-        problems.append(CodeProblem(
-            task_id=row["task_id"],
-            prompt=row["prompt"],
-            test_list=[test_calls],
-            entry_point=entry,
-            canonical_solution=row.get("canonical_solution", ""),
-        ))
-    return problems
-
-
-# ---------------------------------------------------------------------------
-# APPS
-# ---------------------------------------------------------------------------
-
-def load_apps(
-    split: str = "train",
-    difficulty: str | None = None,
-    max_samples: int | None = None,
-    local_path: str | None = None,
-) -> list[CodeProblem]:
-    """加载 APPS 数据集（~10000 题，含测试用例）.
-
-    APPS 数据集比 MBPP 大 25+ 倍，用于缓解 RL 训练数据不足的问题。
-
-    Args:
-        split: "train" / "test"
-        difficulty: 可选过滤难度 "introductory" / "interview" / "competition"
-        max_samples: 限制样本数
-        local_path: 本地 JSONL 文件路径（如 /data/apps/train.jsonl）
-
-    Returns:
-        CodeProblem 列表
-    """
-    # codeparrot/apps 的 loading script 已废弃，直接加载 JSONL 文件
-    if local_path and os.path.exists(local_path):
-        ds = load_dataset("json", data_files=local_path, split="train")
-    else:
-        ds = load_dataset(
-            "json",
-            data_files=f"hf://datasets/codeparrot/apps/{split}.jsonl",
-            split="train",
+        problems.append(
+            CodeProblem(
+                task_id=task_id,
+                dataset="codecontests",
+                title=title,
+                problem_statement=description,
+                starter_code="",
+                public_tests=public_tests,
+                private_tests=private_tests + generated_tests,
+                time_limit_seconds=_parse_duration_seconds(row.get("time_limit")),
+                reference_solutions=reference_solutions,
+                difficulty=_normalize_label(row.get("difficulty"), _CODECONTESTS_DIFFICULTY_MAP),
+                metadata={
+                    "original_split": split,
+                    "source": _normalize_label(row.get("source"), _CODECONTESTS_SOURCE_MAP),
+                    "memory_limit_bytes": row.get("memory_limit_bytes"),
+                    "cf_contest_id": row.get("cf_contest_id"),
+                    "cf_index": row.get("cf_index"),
+                    "cf_points": row.get("cf_points"),
+                    "cf_rating": row.get("cf_rating"),
+                    "cf_tags": row.get("cf_tags", []),
+                    "is_description_translated": row.get("is_description_translated"),
+                    "untranslated_description": row.get("untranslated_description"),
+                    "num_generated_tests": len(generated_tests),
+                },
+            )
         )
 
-    if difficulty is not None:
-        # JSONL 中 difficulty 字段值为字符串: "introductory" / "interview" / "competition"
-        ds = ds.filter(lambda x: str(x.get("difficulty", "")) == difficulty)
+        if max_samples is not None and len(problems) >= max_samples:
+            break
 
-    if max_samples is not None:
-        ds = ds.select(range(min(max_samples, len(ds))))
-
-    problems: list[CodeProblem] = []
-    for idx, row in enumerate(ds):
-        question = row.get("question", "")
-        if not question.strip():
-            continue
-
-        # APPS 的测试用例存在 input_output 字段中（JSON 格式）
-        test_list = _parse_apps_tests(row, idx)
-        if not test_list:
-            continue
-
-        solutions = row.get("solutions", "")
-        canonical = ""
-        if solutions:
-            try:
-                import json as _json
-                sol_list = _json.loads(solutions)
-                if sol_list:
-                    canonical = sol_list[0]
-            except (TypeError, _json.JSONDecodeError):
-                pass
-
-        problems.append(CodeProblem(
-            task_id=f"apps/{row.get('problem_id', idx)}",
-            prompt=question,
-            test_list=test_list,
-            entry_point="",
-            canonical_solution=canonical,
-        ))
     return problems
 
 
-def _parse_apps_tests(row: dict, idx: int) -> list[str]:
-    """从 APPS 的 input_output 字段解析出可执行的 assert 测试.
+def load_livecodebench(
+    split: DatasetSplit = "test",
+    max_samples: int | None = None,
+    local_path: str | None = None,
+    version_tag: str = "release_v6",
+) -> list[CodeProblem]:
+    """加载 LiveCodeBench code generation lite 并映射到统一 schema."""
+    if split != "test":
+        raise ValueError("LiveCodeBench v1 loader currently only supports split='test'")
 
-    APPS 测试格式有两种：
-    1. fn_name 存在：函数调用式，可转为 assert 语句
-    2. fn_name 不存在：stdin/stdout 式，转为 IO 测试代码
-    """
-    import json as _json
+    ds = _select_split(
+        "livecodebench/code_generation_lite",
+        split="test",
+        local_path=local_path,
+        version_tag=version_tag,
+    )
 
-    io_str = row.get("input_output", "")
-    if not io_str:
-        return []
+    problems: list[CodeProblem] = []
+    for row in ds:
+        task_id = f"livecodebench/{row['question_id']}"
+        raw_metadata = row.get("metadata", "")
+        try:
+            parsed_metadata = _decode_json_string(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
+        except Exception:
+            parsed_metadata = {"raw_metadata": raw_metadata}
 
-    try:
-        io_data = _json.loads(io_str)
-    except (TypeError, _json.JSONDecodeError):
-        return []
-
-    inputs = io_data.get("inputs", [])
-    outputs = io_data.get("outputs", [])
-    fn_name = io_data.get("fn_name")
-
-    if not inputs or not outputs or len(inputs) != len(outputs):
-        return []
-
-    test_list: list[str] = []
-
-    if fn_name:
-        # 函数调用式测试：assert fn_name(*args) == expected
-        for inp, out in zip(inputs, outputs):
-            if isinstance(inp, list):
-                args_str = ", ".join(repr(a) for a in inp)
-            else:
-                args_str = repr(inp)
-            test_list.append(f"assert {fn_name}({args_str}) == {repr(out)}")
-    else:
-        # stdin/stdout 式测试：构造 IO 测试代码
-        for i, (inp, out) in enumerate(zip(inputs, outputs)):
-            inp_str = inp if isinstance(inp, str) else str(inp)
-            out_str = out if isinstance(out, str) else str(out)
-            # 生成可执行的 IO 测试
-            test_code = (
-                f"import sys, io\n"
-                f"sys.stdin = io.StringIO({repr(inp_str)})\n"
-                f"_captured = io.StringIO()\n"
-                f"sys.stdout = _captured\n"
-                f"exec(open('<solution>').read()) if False else None\n"
-                f"# IO test {i}: expected output check\n"
-                f"assert _captured.getvalue().strip() == {repr(out_str.strip())}"
+        problems.append(
+            CodeProblem(
+                task_id=task_id,
+                dataset="livecodebench",
+                title=row.get("question_title") or None,
+                problem_statement=row.get("question_content", ""),
+                starter_code=row.get("starter_code", "") or "",
+                public_tests=_parse_lcb_tests(row.get("public_test_cases")),
+                private_tests=_parse_lcb_tests(row.get("private_test_cases")),
+                time_limit_seconds=None,
+                reference_solutions=[],
+                difficulty=row.get("difficulty"),
+                metadata={
+                    "original_split": "test",
+                    "source": row.get("platform"),
+                    "question_id": row.get("question_id"),
+                    "contest_id": row.get("contest_id"),
+                    "contest_date": row.get("contest_date"),
+                    "version_tag": version_tag,
+                    "dataset_metadata": parsed_metadata if isinstance(parsed_metadata, dict) else {"value": parsed_metadata},
+                },
             )
-            test_list.append(test_code)
+        )
 
-    return test_list
+        if max_samples is not None and len(problems) >= max_samples:
+            break
+
+    return problems
 
 
-# ---------------------------------------------------------------------------
-# 转为 HuggingFace Dataset（TRL GRPOTrainer 需要）
-# ---------------------------------------------------------------------------
-
-def problems_to_hf_dataset(
-    problems: list[CodeProblem],
-    prompt_formatter=None,
-) -> Dataset:
-    """将 CodeProblem 列表转为 HuggingFace Dataset.
-
-    Args:
-        problems: 编程题列表
-        prompt_formatter: 可选，将 problem.prompt 转换为训练用 prompt 字符串。
-            默认直接使用 problem.prompt。
-
-    Returns:
-        HuggingFace Dataset，包含 "prompt" 和 "test_list" 列
-    """
-    records = []
-    for p in problems:
-        formatted = prompt_formatter(p.prompt) if prompt_formatter else p.prompt
-        records.append({
-            "prompt": formatted,
-            "task_id": p.task_id,
-            "test_list": p.test_list,
-            "entry_point": p.entry_point,
-        })
-    return Dataset.from_list(records)
+DATASET_LOADERS = {
+    "codecontests": load_codecontests,
+    "livecodebench": load_livecodebench,
+}

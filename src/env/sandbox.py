@@ -8,10 +8,11 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
-import os
+import time
 from dataclasses import dataclass
 
 
@@ -23,6 +24,7 @@ class ExecutionResult:
     stderr: str
     returncode: int
     timed_out: bool
+    runtime_seconds: float = 0.0
 
     @property
     def success(self) -> bool:
@@ -31,13 +33,15 @@ class ExecutionResult:
 
 def execute_code(
     code: str,
-    timeout: int = 5,
+    stdin: str = "",
+    timeout: int | float = 5,
     max_output_chars: int = 4096,
 ) -> ExecutionResult:
     """在子进程中安全执行 Python 代码.
 
     Args:
         code: 要执行的 Python 代码字符串
+        stdin: 写入子进程标准输入的内容
         timeout: 最大执行时间（秒）
         max_output_chars: stdout/stderr 截断长度
 
@@ -77,25 +81,36 @@ def execute_code(
         #   proc.stdout      — 子进程标准输出（str）
         #   proc.stderr      — 子进程标准错误（str）
         #   proc.returncode  — 退出码，0 表示成功
+        started_at = time.monotonic()
         proc = subprocess.run(
             [sys.executable, tmp_path],
+            input=stdin,
             capture_output=True,
             text=True,
             timeout=timeout,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
+        runtime_seconds = time.monotonic() - started_at
         return ExecutionResult(
             stdout=proc.stdout[:max_output_chars],
             stderr=proc.stderr[:max_output_chars],
             returncode=proc.returncode,
             timed_out=False,
+            runtime_seconds=runtime_seconds,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        stdout = e.stdout or ""
+        stderr = e.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
         return ExecutionResult(
-            stdout="",
-            stderr=f"Execution timed out after {timeout}s",
+            stdout=stdout[:max_output_chars],
+            stderr=(stderr or f"Execution timed out after {timeout}s")[:max_output_chars],
             returncode=-1,
             timed_out=True,
+            runtime_seconds=float(timeout),
         )
     except Exception as e:
         return ExecutionResult(
@@ -103,6 +118,7 @@ def execute_code(
             stderr=f"Execution error: {e}",
             returncode=-1,
             timed_out=False,
+            runtime_seconds=0.0,
         )
     finally:
         # 从文件系统上删除这个临时文件
@@ -112,7 +128,7 @@ def execute_code(
 def execute_with_tests(
     code: str,
     test_code: str,
-    timeout: int = 5,
+    timeout: int | float = 5,
 ) -> ExecutionResult:
     """执行代码 + 测试用例.
 
@@ -128,3 +144,18 @@ def execute_with_tests(
     """
     full_code = f"{code}\n\n{test_code}"
     return execute_code(full_code, timeout=timeout)
+
+
+def execute_stdio(
+    code: str,
+    stdin: str,
+    timeout: int | float = 5,
+    max_output_chars: int = 4096,
+) -> ExecutionResult:
+    """执行完整 stdin/stdout Python 程序."""
+    return execute_code(
+        code=code,
+        stdin=stdin,
+        timeout=timeout,
+        max_output_chars=max_output_chars,
+    )

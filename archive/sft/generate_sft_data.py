@@ -16,7 +16,6 @@ SFT 轨迹数据生成
 用法:
   export OPENAI_API_KEY=sk-...
   python -m src.data.generate_sft_data --output data/sft/train.parquet
-  python -m src.data.generate_sft_data --dataset humaneval --output data/sft/val.parquet
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.data.dataset import load_mbpp, load_humaneval, load_apps, CodeProblem
+from src.data.dataset import load_mbpp, CodeProblem
 from src.env.code_env import CodeEnvironment
 from src.env.tools import TOOLS_SCHEMA
 from src.prompts import SYSTEM_PROMPT_AGENTIC_PLAIN, USER_PROMPT_TEMPLATE
@@ -347,7 +346,7 @@ def main():
     p_gen = sub.add_parser("generate", help="Generate trajectories via API")
     p_gen.add_argument("--model", default="gpt-5.1-2025-11-13")
     p_gen.add_argument("--dataset", default="mbpp_train",
-                       choices=["mbpp_train", "mbpp_val", "humaneval", "apps"])
+                       choices=["mbpp_train", "mbpp_val"])
     p_gen.add_argument("--output", default="data/sft/train.parquet")
     p_gen.add_argument("--max_turns", type=int, default=5)
     p_gen.add_argument("--max_samples", type=int, default=None)
@@ -371,20 +370,12 @@ def main():
         return
 
     mbpp_local = os.path.join(args.data_dir, "mbpp_full") if args.data_dir else None
-    humaneval_local = os.path.join(args.data_dir, "humaneval") if args.data_dir else None
-
     if args.dataset == "mbpp_train":
         problems = load_mbpp(version="full", split="train",
                              max_samples=args.max_samples, local_path=mbpp_local)
     elif args.dataset == "mbpp_val":
         problems = load_mbpp(version="full", split="validation",
                              max_samples=args.max_samples, local_path=mbpp_local)
-    elif args.dataset == "humaneval":
-        problems = load_humaneval(max_samples=args.max_samples,
-                                  local_path=humaneval_local)
-    elif args.dataset == "apps":
-        problems = load_apps(split="train", difficulty="introductory",
-                             max_samples=args.max_samples or 500)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 

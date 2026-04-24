@@ -1,164 +1,168 @@
 """
-verl 数据格式转换
-==================
-
-将 CodeProblem 列表转换为 verl RLHFDataset 所需的 parquet 格式。
-
-verl 的数据集要求每条记录包含:
-- prompt: chat messages 列表（直接存 list，不是 JSON 字符串）
-- agent_name: "tool_agent"（verl 用它路由到 ToolAgentLoop）
-- data_source: 数据来源标识
-- extra_info: 包含 tools_kwargs，verl 通过它把参数传给 tool.create()
-
-数据流:
-  parquet extra_info.tools_kwargs.execute_code.create_kwargs
-    → verl _call_tool()
-    → tool.create(create_kwargs={"test_list": [...], "entry_point": "..."})
+verl parquet export for the OJ-like v1 protocol.
 """
 
 from __future__ import annotations
 
-import json
-import os
+import argparse
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
+from src.data.dataset import CodeProblem, load_codecontests, load_livecodebench
+from src.env.tools import serialize_oj_tests
+from src.prompts import build_agentic_messages
 
-from src.prompts import SYSTEM_PROMPT_AGENTIC_PLAIN, USER_PROMPT_TEMPLATE
-from src.data.dataset import CodeProblem, load_mbpp, load_humaneval, load_apps
+
+def _dataset_local_path(data_dir: str | None, name: str) -> str | None:
+    if data_dir is None:
+        return None
+    candidate = Path(data_dir) / name
+    return str(candidate) if candidate.exists() else None
 
 
-def problem_to_verl_record(problem: CodeProblem) -> dict:
-    """将单个 CodeProblem 转换为 verl 训练记录。
-
-    对齐 verl 官方 GSM8K tool agent 示例的数据格式：
-    - prompt: list[dict]（不是 JSON 字符串）
-    - agent_name: "tool_agent"
-    - extra_info.tools_kwargs: 按工具名组织的 create_kwargs
-    """
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_AGENTIC_PLAIN},
-        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-            problem_description=problem.prompt
-        )},
-    ]
-
+def _create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str, Any]:
     return {
-        "data_source": f"code_agent/{problem.task_id.split('/')[0]}",
-        "agent_name": "tool_agent",
-        "prompt": messages,
-        "reward_model": {
-            "ground_truth": problem.test_list,
+        "public_tests": serialize_oj_tests(problem.public_tests),
+        "private_tests": serialize_oj_tests(problem.private_tests),
+        "time_limit_seconds": problem.time_limit_seconds,
+        "max_submissions": max_submissions,
+    }
+
+
+def problem_to_verl_record(
+    problem: CodeProblem,
+    max_submissions: int = 5,
+) -> dict[str, Any]:
+    """Convert a CodeProblem into a verl multi-turn training record."""
+    create_kwargs = _create_kwargs(problem, max_submissions=max_submissions)
+    extra_info = {
+        "task_id": problem.task_id,
+        "dataset": problem.dataset,
+        "title": problem.title,
+        "difficulty": problem.difficulty,
+        "metadata": problem.metadata,
+        "public_tests": create_kwargs["public_tests"],
+        "private_tests": create_kwargs["private_tests"],
+        "time_limit_seconds": problem.time_limit_seconds,
+        "max_submissions": max_submissions,
+        "create_kwargs": create_kwargs,
+        "tools_kwargs": {
+            "run_public_tests": {"create_kwargs": create_kwargs},
+            "submit_solution": {"create_kwargs": create_kwargs},
         },
-        "extra_info": {
-            "task_id": problem.task_id,
-            "need_tools_kwargs": True,
-            "tools_kwargs": {
-                "execute_code": {
-                    "create_kwargs": {
-                        "test_list": problem.test_list,
-                        "entry_point": problem.entry_point,
-                    },
-                },
+    }
+    return {
+        "data_source": problem.dataset,
+        "prompt": build_agentic_messages(problem),
+        "ability": "code",
+        "reward_model": {
+            "style": "rule",
+            "ground_truth": {
+                "task_id": problem.task_id,
+                "private_tests": create_kwargs["private_tests"],
             },
         },
+        "extra_info": extra_info,
     }
 
 
 def problems_to_verl_parquet(
     problems: list[CodeProblem],
     output_path: str | Path,
+    max_submissions: int = 5,
 ) -> Path:
-    """将 CodeProblem 列表转换为 verl 格式的 parquet 文件。"""
-    records = [problem_to_verl_record(p) for p in problems]
-    df = pd.DataFrame(records)
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(output_path, index=False)
-    print(f"Saved {len(records)} records to {output_path}")
-    return output_path
+    """Write CodeProblem records to a verl-compatible parquet file."""
+    try:
+        import pandas as pd
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "Install pandas and pyarrow to export verl parquet files."
+        ) from e
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    records = [
+        problem_to_verl_record(problem, max_submissions=max_submissions)
+        for problem in problems
+    ]
+    pd.DataFrame(records).to_parquet(output, index=False)
+    return output
 
 
 def prepare_verl_datasets(
     output_dir: str = "./data/verl",
     data_dir: str | None = None,
-    use_apps: bool = True,
-    apps_difficulty: str = "introductory",
-    apps_max_samples: int = 3000,
+    max_train_samples: int | None = None,
+    max_val_samples: int | None = None,
+    max_test_samples: int | None = None,
+    max_submissions: int = 5,
+    livecodebench_version_tag: str = "release_v6",
 ) -> dict[str, Path]:
-    """准备所有 verl 训练和验证数据集。
+    """Prepare CodeContests train/val and LiveCodeBench test parquet files."""
+    output = Path(output_dir)
+    codecontests_path = _dataset_local_path(data_dir, "codecontests")
+    livecodebench_path = _dataset_local_path(data_dir, "livecodebench")
 
-    Args:
-        output_dir: parquet 输出目录
-        data_dir: 本地数据集根目录（含 mbpp_full/ humaneval/ 子目录），
-                  无外网环境使用
-        use_apps: 是否加载 APPS 数据集（需要网络或本地缓存）
-        apps_difficulty: APPS 难度过滤
-        apps_max_samples: APPS 最大样本数
-
-    Returns:
-        字典: {split_name: parquet_path}
-    """
-    output_dir = Path(output_dir)
-    paths: dict[str, Path] = {}
-
-    mbpp_local = os.path.join(data_dir, "mbpp_full") if data_dir else None
-    humaneval_local = os.path.join(data_dir, "humaneval") if data_dir else None
-
-    print("Loading MBPP train...")
-    train_problems = load_mbpp(version="full", split="train", local_path=mbpp_local)
-    print(f"  MBPP train: {len(train_problems)} problems")
-
-    if use_apps:
-        print("Loading APPS...")
-        apps_problems = load_apps(
-            split="train",
-            difficulty=apps_difficulty,
-            max_samples=apps_max_samples,
-        )
-        train_problems.extend(apps_problems)
-        print(f"  + APPS: {len(apps_problems)}, total: {len(train_problems)}")
-
-    paths["train"] = problems_to_verl_parquet(
-        train_problems, output_dir / "train.parquet"
+    train = load_codecontests(
+        split="train",
+        max_samples=max_train_samples,
+        local_path=codecontests_path,
+    )
+    val = load_codecontests(
+        split="validation",
+        max_samples=max_val_samples,
+        local_path=codecontests_path,
+    )
+    test = load_livecodebench(
+        split="test",
+        max_samples=max_test_samples,
+        local_path=livecodebench_path,
+        version_tag=livecodebench_version_tag,
     )
 
-    print("Loading MBPP validation...")
-    val_problems = load_mbpp(version="full", split="validation", local_path=mbpp_local)
-    paths["val"] = problems_to_verl_parquet(
-        val_problems, output_dir / "val.parquet"
-    )
-
-    print("Loading MBPP test...")
-    test_problems = load_mbpp(version="full", split="test", local_path=mbpp_local)
-    paths["test"] = problems_to_verl_parquet(
-        test_problems, output_dir / "test.parquet"
-    )
-
-    print("Loading HumanEval...")
-    he_problems = load_humaneval(local_path=humaneval_local)
-    paths["humaneval"] = problems_to_verl_parquet(
-        he_problems, output_dir / "humaneval.parquet"
-    )
-
+    paths = {
+        "train": problems_to_verl_parquet(
+            train,
+            output / "train.parquet",
+            max_submissions=max_submissions,
+        ),
+        "val": problems_to_verl_parquet(
+            val,
+            output / "val.parquet",
+            max_submissions=max_submissions,
+        ),
+        "test": problems_to_verl_parquet(
+            test,
+            output / "test.parquet",
+            max_submissions=max_submissions,
+        ),
+    }
     return paths
 
 
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default=None,
-                        help="本地数据集根目录（含 mbpp_full/ humaneval/ 子目录）")
-    parser.add_argument("--output_dir", type=str, default="./data/verl")
-    parser.add_argument("--no_apps", action="store_true",
-                        help="跳过 APPS 数据集（无网络或无本地缓存时使用）")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Prepare OJ-like verl parquet datasets")
+    parser.add_argument("--output_dir", default="./data/verl")
+    parser.add_argument("--data_dir", default=None)
+    parser.add_argument("--max_train_samples", type=int, default=None)
+    parser.add_argument("--max_val_samples", type=int, default=None)
+    parser.add_argument("--max_test_samples", type=int, default=None)
+    parser.add_argument("--max_submissions", type=int, default=5)
+    parser.add_argument("--livecodebench_version_tag", default="release_v6")
     args = parser.parse_args()
 
     paths = prepare_verl_datasets(
         output_dir=args.output_dir,
         data_dir=args.data_dir,
-        use_apps=not args.no_apps,
+        max_train_samples=args.max_train_samples,
+        max_val_samples=args.max_val_samples,
+        max_test_samples=args.max_test_samples,
+        max_submissions=args.max_submissions,
+        livecodebench_version_tag=args.livecodebench_version_tag,
     )
-    print("\nAll datasets prepared:")
-    for name, path in paths.items():
-        print(f"  {name}: {path}")
+    for split, path in paths.items():
+        print(f"{split}: {path}")
+
+
+if __name__ == "__main__":
+    main()
