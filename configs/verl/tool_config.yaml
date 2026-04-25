@@ -6,7 +6,8 @@ tools:
     type: function
     function:
       name: run_public_tests
-      description: Run the complete Python stdin/stdout program on the public tests. Use this to debug before submitting.
+      description: Run the complete Python stdin/stdout program on the public tests.
+        Use this to debug before submitting.
       parameters:
         type: object
         properties:
@@ -22,7 +23,8 @@ tools:
     type: function
     function:
       name: submit_solution
-      description: Submit the complete Python stdin/stdout program to the full judge. This runs private tests and consumes one submission attempt.
+      description: Submit the complete Python stdin/stdout program to the full judge.
+        This runs private tests and consumes one submission attempt.
       parameters:
         type: object
         properties:

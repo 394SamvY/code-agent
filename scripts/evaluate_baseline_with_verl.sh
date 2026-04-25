@@ -1,0 +1,179 @@
+#!/bin/bash
+# Run one OJ-like baseline eval set through verl validation.
+#
+# This script intentionally uses verl's main_ppo validation path so the run goes
+# through the same multi-turn agent loop, tool layer, and reward function as GRPO.
+#
+# Usage:
+#   bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+#   bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+#   bash scripts/evaluate_baseline_with_verl.sh /root/autodl-tmp/code-agent/data/verl/codecontests_test.parquet /root/autodl-tmp/models/Qwen3-8B
+#
+# Useful overrides:
+#   MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=1024 VAL_BATCH_SIZE=4 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+#   CUDA_VISIBLE_DEVICES=0 AGENT_WORKERS=1 GPU_MEMORY_UTILIZATION=0.35 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+#   VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_DIR"
+
+DATASET_ARG="${1:-codecontests_test}"
+MODEL_PATH="${2:-/root/autodl-tmp/models/Qwen3-8B}"
+
+CONFIG_PATH="$PROJECT_DIR/configs/verl"
+CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_DIR/outputs/verl_baseline_eval}"
+
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-2048}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-1024}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
+TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
+VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
+TRUNCATION="${TRUNCATION:-middle}"
+DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
+AGENT_WORKERS="${AGENT_WORKERS:-1}"
+FSDP_MODEL_DTYPE="${FSDP_MODEL_DTYPE:-bf16}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.35}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4096}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
+ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
+LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-20}"
+TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
+
+# Single-5090 baseline defaults. Caller may override these before invoking.
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export TORCHDYNAMO_DISABLE="${TORCHDYNAMO_DISABLE:-1}"
+export VERL_LOGGING_LEVEL="${VERL_LOGGING_LEVEL:-INFO}"
+export RAY_DEDUP_LOGS="${RAY_DEDUP_LOGS:-0}"
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
+export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
+
+case "$DATASET_ARG" in
+    codecontests_valid)
+        VAL_FILE="$PROJECT_DIR/data/verl/codecontests_valid.parquet"
+        DATASET_TAG="codecontests_valid"
+        ;;
+    codecontests_test)
+        VAL_FILE="$PROJECT_DIR/data/verl/codecontests_test.parquet"
+        DATASET_TAG="codecontests_test"
+        ;;
+    livecodebench_test)
+        VAL_FILE="$PROJECT_DIR/data/verl/livecodebench_test.parquet"
+        DATASET_TAG="livecodebench_test"
+        ;;
+    *.parquet)
+        VAL_FILE="$DATASET_ARG"
+        DATASET_TAG="$(basename "$DATASET_ARG" .parquet)"
+        ;;
+    *)
+        echo "[ERROR] Unknown dataset alias or parquet path: $DATASET_ARG"
+        echo "Supported aliases: codecontests_valid, codecontests_test, livecodebench_test"
+        exit 1
+        ;;
+esac
+
+if [ ! -f "$VAL_FILE" ]; then
+    echo "[ERROR] Eval parquet not found: $VAL_FILE"
+    exit 1
+fi
+
+if [ ! -f "$TRAIN_STUB_FILE" ]; then
+    echo "[ERROR] Train stub parquet not found: $TRAIN_STUB_FILE"
+    echo "Set TRAIN_STUB_FILE to any small verl parquet if needed."
+    exit 1
+fi
+
+if [ ! -d "$MODEL_PATH" ]; then
+    echo "[ERROR] Model path not found: $MODEL_PATH"
+    exit 1
+fi
+
+echo "Generating tool_config.yaml from TOOLS_SCHEMA..."
+python3 -m src.env.tools
+echo ""
+
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+RUN_NAME="${RUN_NAME:-${DATASET_TAG}_$(basename "$MODEL_PATH")_mp${MAX_PROMPT_LENGTH}_mr${MAX_RESPONSE_LENGTH}_${TIMESTAMP}}"
+RUN_DIR="$OUTPUT_ROOT/$RUN_NAME"
+VALIDATION_DIR="$RUN_DIR/generations"
+CHECKPOINT_DIR="$RUN_DIR/checkpoints"
+mkdir -p "$VALIDATION_DIR" "$CHECKPOINT_DIR"
+
+echo "==== verl OJ-like baseline eval ===="
+echo "  dataset:              $DATASET_TAG"
+echo "  val_file:             $VAL_FILE"
+echo "  train_stub_file:      $TRAIN_STUB_FILE"
+echo "  model:                $MODEL_PATH"
+echo "  cuda_visible_devices: $CUDA_VISIBLE_DEVICES"
+echo "  max_prompt_length:    $MAX_PROMPT_LENGTH"
+echo "  max_response_length:  $MAX_RESPONSE_LENGTH"
+echo "  max_model_len:        $MAX_MODEL_LEN"
+echo "  train_batch_size:     $TRAIN_BATCH_SIZE"
+echo "  val_batch_size:       $VAL_BATCH_SIZE"
+echo "  val_max_samples:      $VAL_MAX_SAMPLES"
+echo "  truncation:           $TRUNCATION"
+echo "  dataloader_workers:   $DATALOADER_NUM_WORKERS"
+echo "  agent_workers:        $AGENT_WORKERS"
+echo "  fsdp_model_dtype:     $FSDP_MODEL_DTYPE"
+echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION"
+echo "  enforce_eager:        $ENFORCE_EAGER"
+echo "  output:               $RUN_DIR"
+echo ""
+
+python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
+    --config-path="$CONFIG_PATH" \
+    --config-name="$CONFIG_NAME" \
+    trainer.nnodes=1 \
+    trainer.n_gpus_per_node=1 \
+    trainer.project_name=code-agent-baseline-eval \
+    trainer.experiment_name="$RUN_NAME" \
+    trainer.val_only=True \
+    trainer.val_before_train=True \
+    trainer.test_freq=-1 \
+    trainer.save_freq=-1 \
+    trainer.resume_mode=disable \
+    trainer.logger='["console"]' \
+    trainer.log_val_generations="$LOG_VAL_GENERATIONS" \
+    trainer.rollout_data_dir="$RUN_DIR/rollout_data" \
+    trainer.validation_data_dir="$VALIDATION_DIR" \
+    trainer.default_local_dir="$CHECKPOINT_DIR" \
+    data.train_files="$TRAIN_STUB_FILE" \
+    data.val_files="$VAL_FILE" \
+    data.train_batch_size="$TRAIN_BATCH_SIZE" \
+    data.val_batch_size="$VAL_BATCH_SIZE" \
+    data.val_max_samples="$VAL_MAX_SAMPLES" \
+    data.max_prompt_length="$MAX_PROMPT_LENGTH" \
+    data.max_response_length="$MAX_RESPONSE_LENGTH" \
+    data.truncation="$TRUNCATION" \
+    data.dataloader_num_workers="$DATALOADER_NUM_WORKERS" \
+    data.return_raw_chat=true \
+    data.apply_chat_template_kwargs.enable_thinking=false \
+    actor_rollout_ref.model.path="$MODEL_PATH" \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.actor.fsdp_config.model_dtype="$FSDP_MODEL_DTYPE" \
+    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.ref.fsdp_config.model_dtype="$FSDP_MODEL_DTYPE" \
+    actor_rollout_ref.rollout.name=sglang \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.gpu_memory_utilization="$GPU_MEMORY_UTILIZATION" \
+    actor_rollout_ref.rollout.max_num_batched_tokens="$MAX_NUM_BATCHED_TOKENS" \
+    actor_rollout_ref.rollout.max_model_len="$MAX_MODEL_LEN" \
+    actor_rollout_ref.rollout.max_num_seqs="$MAX_NUM_SEQS" \
+    actor_rollout_ref.rollout.enforce_eager="$ENFORCE_EAGER" \
+    actor_rollout_ref.rollout.n=1 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
+    actor_rollout_ref.rollout.val_kwargs.n=1 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=false \
+    actor_rollout_ref.rollout.multi_turn.enable=true \
+    actor_rollout_ref.rollout.multi_turn.tool_config_path=configs/verl/tool_config.yaml \
+    actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
+
+echo ""
+echo "==== eval complete ===="
+echo "Validation generations: $VALIDATION_DIR/0.jsonl"
