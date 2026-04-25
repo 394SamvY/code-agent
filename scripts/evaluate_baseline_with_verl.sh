@@ -10,8 +10,8 @@
 #   bash scripts/evaluate_baseline_with_verl.sh /root/autodl-tmp/code-agent/data/verl/codecontests_test.parquet /root/autodl-tmp/models/Qwen3-8B
 #
 # Useful overrides:
-#   MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=1024 VAL_BATCH_SIZE=4 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-#   CUDA_VISIBLE_DEVICES=0 AGENT_WORKERS=1 GPU_MEMORY_UTILIZATION=0.35 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+#   MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2048 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+#   CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 GPU_MEMORY_UTILIZATION=0.40 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 #   VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 
 set -euo pipefail
@@ -26,25 +26,78 @@ CONFIG_PATH="$PROJECT_DIR/configs/verl"
 CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_DIR/outputs/verl_baseline_eval}"
 
+detect_cuda_visible_devices() {
+    if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+        echo "$CUDA_VISIBLE_DEVICES"
+        return
+    fi
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        local devices
+        devices="$(nvidia-smi --query-gpu=index --format=csv,noheader | tr '\n' ',' | sed 's/,$//')"
+        if [ -n "$devices" ]; then
+            echo "$devices"
+            return
+        fi
+    fi
+    echo "0"
+}
+
+count_cuda_devices() {
+    local devices="$1"
+    if [ -z "$devices" ] || [ "$devices" = "-1" ]; then
+        echo "0"
+        return
+    fi
+    local compact="${devices// /}"
+    IFS=',' read -ra parts <<< "$compact"
+    local count=0
+    for part in "${parts[@]}"; do
+        if [ -n "$part" ]; then
+            count=$((count + 1))
+        fi
+    done
+    echo "$count"
+}
+
+CUDA_VISIBLE_DEVICES_RESOLVED="$(detect_cuda_visible_devices)"
+VISIBLE_GPU_COUNT="$(count_cuda_devices "$CUDA_VISIBLE_DEVICES_RESOLVED")"
+if [ "$VISIBLE_GPU_COUNT" -lt 1 ]; then
+    echo "[ERROR] No visible CUDA devices detected."
+    exit 1
+fi
+
+NUM_GPUS="${NUM_GPUS:-$VISIBLE_GPU_COUNT}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-2048}"
-MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-1024}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-2048}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
 VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
 TRUNCATION="${TRUNCATION:-middle}"
+FILTER_OVERLONG_PROMPTS="${FILTER_OVERLONG_PROMPTS:-true}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 AGENT_WORKERS="${AGENT_WORKERS:-1}"
 FSDP_MODEL_DTYPE="${FSDP_MODEL_DTYPE:-bf16}"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.35}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.40}"
+ROLLOUT_TP="${ROLLOUT_TP:-1}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4096}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-20}"
 TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
 
-# Single-5090 baseline defaults. Caller may override these before invoking.
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
+    echo "[ERROR] NUM_GPUS=$NUM_GPUS exceeds visible GPU count $VISIBLE_GPU_COUNT from CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES_RESOLVED"
+    exit 1
+fi
+
+if [ "$ROLLOUT_TP" -lt 1 ] || [ $((NUM_GPUS % ROLLOUT_TP)) -ne 0 ]; then
+    echo "[ERROR] ROLLOUT_TP=$ROLLOUT_TP must be >=1 and divide NUM_GPUS=$NUM_GPUS"
+    exit 1
+fi
+
+# Multi-GPU baseline defaults. Caller may override these before invoking.
+export CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_RESOLVED"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 export TORCHDYNAMO_DISABLE="${TORCHDYNAMO_DISABLE:-1}"
 export VERL_LOGGING_LEVEL="${VERL_LOGGING_LEVEL:-INFO}"
@@ -92,23 +145,34 @@ if [ ! -d "$MODEL_PATH" ]; then
     exit 1
 fi
 
-echo "Generating tool_config.yaml from TOOLS_SCHEMA..."
-python3 -m src.env.tools
-echo ""
-
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 RUN_NAME="${RUN_NAME:-${DATASET_TAG}_$(basename "$MODEL_PATH")_mp${MAX_PROMPT_LENGTH}_mr${MAX_RESPONSE_LENGTH}_${TIMESTAMP}}"
 RUN_DIR="$OUTPUT_ROOT/$RUN_NAME"
 VALIDATION_DIR="$RUN_DIR/generations"
 CHECKPOINT_DIR="$RUN_DIR/checkpoints"
+LOG_FILE="$RUN_DIR/verl_eval.log"
+if [ -e "$LOG_FILE" ]; then
+    echo "[ERROR] Log file already exists and will not be overwritten: $LOG_FILE"
+    echo "Use a different RUN_NAME or remove the existing run directory."
+    exit 1
+fi
 mkdir -p "$VALIDATION_DIR" "$CHECKPOINT_DIR"
+
+# Save the full console stream next to generations/checkpoints for reproducibility.
+exec > >(tee "$LOG_FILE") 2>&1
+
+echo "Generating tool_config.yaml from TOOLS_SCHEMA..."
+python3 -m src.env.tools
+echo ""
 
 echo "==== verl OJ-like baseline eval ===="
 echo "  dataset:              $DATASET_TAG"
 echo "  val_file:             $VAL_FILE"
 echo "  train_stub_file:      $TRAIN_STUB_FILE"
 echo "  model:                $MODEL_PATH"
+echo "  run_name:             $RUN_NAME"
 echo "  cuda_visible_devices: $CUDA_VISIBLE_DEVICES"
+echo "  num_gpus:             $NUM_GPUS"
 echo "  max_prompt_length:    $MAX_PROMPT_LENGTH"
 echo "  max_response_length:  $MAX_RESPONSE_LENGTH"
 echo "  max_model_len:        $MAX_MODEL_LEN"
@@ -116,19 +180,24 @@ echo "  train_batch_size:     $TRAIN_BATCH_SIZE"
 echo "  val_batch_size:       $VAL_BATCH_SIZE"
 echo "  val_max_samples:      $VAL_MAX_SAMPLES"
 echo "  truncation:           $TRUNCATION"
+echo "  filter_overlong:      $FILTER_OVERLONG_PROMPTS"
 echo "  dataloader_workers:   $DATALOADER_NUM_WORKERS"
 echo "  agent_workers:        $AGENT_WORKERS"
 echo "  fsdp_model_dtype:     $FSDP_MODEL_DTYPE"
+echo "  rollout_tp:           $ROLLOUT_TP"
 echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION"
+echo "  max_batched_tokens:   $MAX_NUM_BATCHED_TOKENS"
+echo "  max_num_seqs:         $MAX_NUM_SEQS"
 echo "  enforce_eager:        $ENFORCE_EAGER"
 echo "  output:               $RUN_DIR"
+echo "  log_file:             $LOG_FILE"
 echo ""
 
 python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     --config-path="$CONFIG_PATH" \
     --config-name="$CONFIG_NAME" \
     trainer.nnodes=1 \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node="$NUM_GPUS" \
     trainer.project_name=code-agent-baseline-eval \
     trainer.experiment_name="$RUN_NAME" \
     trainer.val_only=True \
@@ -149,7 +218,10 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     data.max_prompt_length="$MAX_PROMPT_LENGTH" \
     data.max_response_length="$MAX_RESPONSE_LENGTH" \
     data.truncation="$TRUNCATION" \
+    data.filter_overlong_prompts="$FILTER_OVERLONG_PROMPTS" \
     data.dataloader_num_workers="$DATALOADER_NUM_WORKERS" \
+    data.custom_cls.path=src/verl_dataset_adapter.py \
+    data.custom_cls.name=OJLikeRLHFDataset \
     data.return_raw_chat=true \
     data.apply_chat_template_kwargs.enable_thinking=false \
     actor_rollout_ref.model.path="$MODEL_PATH" \
@@ -158,10 +230,11 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.model_dtype="$FSDP_MODEL_DTYPE" \
     actor_rollout_ref.rollout.name=sglang \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size="$ROLLOUT_TP" \
     actor_rollout_ref.rollout.gpu_memory_utilization="$GPU_MEMORY_UTILIZATION" \
     actor_rollout_ref.rollout.max_num_batched_tokens="$MAX_NUM_BATCHED_TOKENS" \
     actor_rollout_ref.rollout.max_model_len="$MAX_MODEL_LEN" \
+    actor_rollout_ref.rollout.response_length="$MAX_RESPONSE_LENGTH" \
     actor_rollout_ref.rollout.max_num_seqs="$MAX_NUM_SEQS" \
     actor_rollout_ref.rollout.enforce_eager="$ENFORCE_EAGER" \
     actor_rollout_ref.rollout.n=1 \
@@ -177,3 +250,4 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
 echo ""
 echo "==== eval complete ===="
 echo "Validation generations: $VALIDATION_DIR/0.jsonl"
+echo "Log file: $LOG_FILE"

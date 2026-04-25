@@ -259,7 +259,31 @@ CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2
 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 ```
 
-注意：当前脚本目前固定 `trainer.n_gpus_per_node=1`，下一步如果切到多卡，需要先把脚本里的 `NUM_GPUS` 参数接入到 `trainer.n_gpus_per_node`，并检查 rollout / FSDP placement。
+## 2026-04-25 多卡继续调试结果
+
+已在 `2 x A800 80GB` 机器上继续调试，并完成以下修复：
+
+- `scripts/evaluate_baseline_with_verl.sh` 不再固定单卡，默认自动探测所有可见 GPU，并将 `NUM_GPUS` 接入 `trainer.n_gpus_per_node`。
+- 新增 `ROLLOUT_TP` 参数，默认 `1`，并检查它必须整除 `NUM_GPUS`。
+- 正式 baseline 默认改为 `MAX_PROMPT_LENGTH=2048`、`MAX_RESPONSE_LENGTH=2048`、`MAX_MODEL_LEN=4096`。
+- 同时覆盖 `actor_rollout_ref.rollout.response_length=$MAX_RESPONSE_LENGTH`，避免只改 `data.max_response_length` 而 rollout 仍继承 `1024`。
+- 新增 `src/verl_dataset_adapter.py` 的 `OJLikeRLHFDataset`，在 verl 读取 parquet 时把当前 v1 schema 中的 JSON string 字段 `prompt`、`reward_model`、`extra_info` 解码成 verl 0.7.1 需要的嵌套对象。
+- eval 脚本通过 `data.custom_cls.path=src/verl_dataset_adapter.py` 和 `data.custom_cls.name=OJLikeRLHFDataset` 使用该 adapter，不改变现有 parquet 协议。
+
+已跑通 smoke：
+
+```bash
+VAL_MAX_SAMPLES=1 VAL_BATCH_SIZE=1 LOG_VAL_GENERATIONS=1 AGENT_WORKERS=1 \
+bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+```
+
+结果：
+
+- `trainer.n_gpus_per_node=2` 生效。
+- `Using dataset class: OJLikeRLHFDataset` 生效。
+- SGLang hybrid server 在两张 A800 上成功启动。
+- validation 完整结束并写出 `outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr2048_20260425_230544/generations/0.jsonl`。
+- smoke 指标为 `score=0.0`、`acc=0.0`、`num_tool_calls=0.0`，这是模型输出未触发 tool call 的样本级结果，不是脚本失败。
 
 ## 下个上下文提示词
 
@@ -270,9 +294,9 @@ bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 
 目标：继续把 baseline 评测脚本做成可在多卡机器上一键跑通，评测集是 data/verl/codecontests_test.parquet 和 data/verl/livecodebench_test.parquet，一次只跑一个。必须尽量复用 verl main_ppo validation 的 multi-turn agent loop、tool layer 和 src/reward.py，不要自己写 agent loop，不要重新引入 execute_code/test_list/函数补全协议，不要下载数据或模型。
 
-当前已新增 scripts/evaluate_baseline_with_verl.sh，并更新 README。单 5090 调试结论：Hydra 配置和数据/tool schema 能过；train_batch_size 需 >= ppo_mini_batch_size，所以脚本默认 TRAIN_BATCH_SIZE=32；actor FSDP 默认 fp32 会 OOM，已覆盖 actor/ref fsdp_config.model_dtype=bf16；之后 SGLang hybrid server 在单 32GB 5090 上仍 OOM，即使 GPU_MEMORY_UTILIZATION=0.35、MAX_MODEL_LEN=3072、MAX_NUM_SEQS=16、ENFORCE_EAGER=true。判断是 Qwen3-8B + verl hybrid SGLang + actor 同卡并存显存不足。
+当前已新增 scripts/evaluate_baseline_with_verl.sh，并更新 README。单 5090 调试结论：Hydra 配置和数据/tool schema 能过；train_batch_size 需 >= ppo_mini_batch_size，所以脚本默认 TRAIN_BATCH_SIZE=32；actor FSDP 默认 fp32 会 OOM，已覆盖 actor/ref fsdp_config.model_dtype=bf16；之后 SGLang hybrid server 在单 32GB 5090 上仍 OOM，即使 GPU_MEMORY_UTILIZATION=0.35、MAX_MODEL_LEN=3072、MAX_NUM_SEQS=16、ENFORCE_EAGER=true。判断是 Qwen3-8B + verl hybrid SGLang + actor 同卡并存显存不足。2 x A800 80GB 上已跑通 VAL_MAX_SAMPLES=1 smoke。
 
 长度建议：max_prompt_length=2048 是合理 baseline 档位；response_length=1024 只适合 smoke，正式 OJ-like agentic baseline 更建议 max_response_length=2048，并显式设置 rollout.max_model_len=4096，避免 SGLang 按 Qwen3 大上下文预留过多 cache。
 
-下一步：我已经启动了多卡机器。请检查 scripts/evaluate_baseline_with_verl.sh，把 NUM_GPUS 接入 trainer.n_gpus_per_node，不要固定 1；根据多卡环境调整 rollout tensor_model_parallel_size / gpu_memory_utilization / agent workers；推荐正式 baseline 先用 MAX_PROMPT_LENGTH=2048、MAX_RESPONSE_LENGTH=2048、MAX_MODEL_LEN=4096。先跑 VAL_MAX_SAMPLES=1 的 smoke，再跑 codecontests_test 全量，最后跑 livecodebench_test。模型路径默认 /root/autodl-tmp/models/Qwen3-8B。输出继续放 outputs/verl_baseline_eval/。如果需要改 README 或 docs，请同步更新。
+当前状态：scripts/evaluate_baseline_with_verl.sh 已支持多卡自动探测和 NUM_GPUS 覆盖，已加入 OJLikeRLHFDataset 适配 JSON-string parquet schema，并已跑通 VAL_MAX_SAMPLES=1 smoke。下一步可以直接跑 codecontests_test 全量，最后跑 livecodebench_test。模型路径默认 /root/autodl-tmp/models/Qwen3-8B。输出继续放 outputs/verl_baseline_eval/。如果需要改 README 或 docs，请同步更新。
 ```

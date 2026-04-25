@@ -152,7 +152,7 @@ python3 -m src.env.tools
 bash scripts/evaluate_with_verl.sh livecodebench_test /root/autodl-tmp/models/Qwen3-8B 1
 ```
 
-单卡 baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据：
+baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；默认使用所有可见 GPU：
 
 ```bash
 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
@@ -163,7 +163,8 @@ bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 
 ```bash
 VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-VAL_BATCH_SIZE=2 MAX_PROMPT_LENGTH=2048 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2048 \
+  bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 ```
 
 可选：用轻量本地 harness 做快速调试。这个入口不作为主评测路径：
@@ -179,7 +180,7 @@ python3 -m src.eval.evaluate \
 说明：
 
 - `scripts/evaluate_with_verl.sh` 复用 `verl` 的 `main_ppo` validation 路径，行为更接近训练时 rollout
-- `scripts/evaluate_baseline_with_verl.sh` 是当前单卡 baseline 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`
+- `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
 - `src.eval.evaluate` 只保留为轻量、本地可调试的评测 harness
 - `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
 

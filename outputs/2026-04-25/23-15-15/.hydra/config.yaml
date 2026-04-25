@@ -30,7 +30,7 @@ actor_rollout_ref:
       reshard_after_forward: true
       fsdp_size: -1
       forward_prefetch: false
-      model_dtype: fp32
+      model_dtype: bf16
       use_orig_params: false
       seed: 42
       full_determinism: false
@@ -190,7 +190,7 @@ actor_rollout_ref:
       reshard_after_forward: true
       fsdp_size: -1
       forward_prefetch: false
-      model_dtype: fp32
+      model_dtype: bf16
       use_orig_params: false
       seed: 42
       full_determinism: false
@@ -226,11 +226,11 @@ actor_rollout_ref:
     top_k: -1
     top_p: 0.95
     prompt_length: ${oc.select:data.max_prompt_length,512}
-    response_length: 1024
+    response_length: 2048
     dtype: bfloat16
-    gpu_memory_utilization: 0.55
+    gpu_memory_utilization: 0.45
     ignore_eos: false
-    enforce_eager: false
+    enforce_eager: true
     cudagraph_capture_sizes: null
     free_cache_engine: true
     tensor_model_parallel_size: 1
@@ -238,7 +238,7 @@ actor_rollout_ref:
     expert_parallel_size: 1
     pipeline_model_parallel_size: 1
     max_num_batched_tokens: 4096
-    max_model_len: null
+    max_model_len: 4096
     max_num_seqs: 16
     enable_chunked_prefill: true
     enable_prefix_caching: true
@@ -282,7 +282,7 @@ actor_rollout_ref:
     calculate_log_probs: false
     agent:
       _target_: verl.workers.config.AgentLoopConfig
-      num_workers: 1
+      num_workers: 2
       default_agent_loop: single_turn_agent
       agent_loop_config_path: null
       custom_async_server:
@@ -380,13 +380,13 @@ data:
   train_files: /root/autodl-tmp/code-agent/data/verl/codecontests_valid.parquet
   val_files: /root/autodl-tmp/code-agent/data/verl/codecontests_test.parquet
   train_max_samples: -1
-  val_max_samples: 1
+  val_max_samples: -1
   prompt_key: prompt
   reward_fn_key: data_source
   max_prompt_length: 2048
-  max_response_length: 1024
-  train_batch_size: 1
-  val_batch_size: 1
+  max_response_length: 2048
+  train_batch_size: 32
+  val_batch_size: 4
   tool_config_path: ${oc.select:actor_rollout_ref.rollout.multi_turn.tool_config_path,
     null}
   return_raw_input_ids: false
@@ -404,8 +404,8 @@ data:
   video_key: videos
   trust_remote_code: false
   custom_cls:
-    path: null
-    name: null
+    path: src/verl_dataset_adapter.py
+    name: OJLikeRLHFDataset
   return_multi_modal_inputs: true
   sampler:
     class_path: null
@@ -657,14 +657,14 @@ trainer:
   total_epochs: 7
   total_training_steps: null
   project_name: code-agent-baseline-eval
-  experiment_name: codecontests_test_Qwen3-8B_mp2048_mr1024_20260425_222537
+  experiment_name: codecontests_test_Qwen3-8B_mp2048_mr2048_20260425_231506
   logger:
   - console
-  log_val_generations: 1
-  rollout_data_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr1024_20260425_222537/rollout_data
-  validation_data_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr1024_20260425_222537/generations
+  log_val_generations: 20
+  rollout_data_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr2048_20260425_231506/rollout_data
+  validation_data_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr2048_20260425_231506/generations
   nnodes: 1
-  n_gpus_per_node: 1
+  n_gpus_per_node: 2
   save_freq: -1
   esi_redundant_time: 0
   resume_mode: disable
@@ -675,7 +675,7 @@ trainer:
   critic_warmup: 0
   default_hdfs_dir: null
   del_local_ckpt_after_load: false
-  default_local_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr1024_20260425_222537/checkpoints
+  default_local_dir: /root/autodl-tmp/code-agent/outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp2048_mr2048_20260425_231506/checkpoints
   max_actor_ckpt_to_keep: 1
   max_critic_ckpt_to_keep: null
   ray_wait_register_center_timeout: 300
