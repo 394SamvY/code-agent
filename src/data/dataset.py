@@ -28,6 +28,7 @@ import base64
 import hashlib
 import json
 import os
+import pickle
 import zlib
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -93,6 +94,16 @@ _CODECONTESTS_LANGUAGE_MAP = {
     2: "CPP",
     3: "PYTHON3",
     4: "JAVA",
+}
+
+_LIVECODEBENCH_LOCAL_FILES = {
+    "release_v1": ["test.jsonl"],
+    "release_v2": ["test.jsonl", "test2.jsonl"],
+    "release_v3": ["test.jsonl", "test2.jsonl", "test3.jsonl"],
+    "release_v4": ["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl"],
+    "release_v5": ["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl", "test5.jsonl"],
+    "release_v6": ["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl", "test5.jsonl", "test6.jsonl"],
+    "release_latest": ["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl", "test5.jsonl", "test6.jsonl"],
 }
 
 
@@ -170,6 +181,36 @@ def _stable_task_id(prefix: str, *parts: str) -> str:
     joined = "\n".join(parts)
     digest = hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
     return f"{prefix}/{digest}"
+
+
+def _find_livecodebench_local_script(version_tag: str) -> str | None:
+    """Find a cached LiveCodeBench dataset script with the required local files."""
+    required_files = _LIVECODEBENCH_LOCAL_FILES.get(version_tag)
+    if not required_files:
+        return None
+
+    hf_home = os.getenv("HF_HOME")
+    if not hf_home:
+        return None
+
+    snapshots_root = os.path.join(
+        hf_home,
+        "hub",
+        "datasets--livecodebench--code_generation_lite",
+        "snapshots",
+    )
+    if not os.path.isdir(snapshots_root):
+        return None
+
+    for snapshot_name in sorted(os.listdir(snapshots_root), reverse=True):
+        snapshot_dir = os.path.join(snapshots_root, snapshot_name)
+        script_path = os.path.join(snapshot_dir, "code_generation_lite.py")
+        if not os.path.isfile(script_path):
+            continue
+        if all(os.path.isfile(os.path.join(snapshot_dir, name)) for name in required_files):
+            return script_path
+
+    return None
 
 
 def _normalize_label(value: Any, value_map: dict[int, str]) -> str | None:
@@ -252,10 +293,17 @@ def _decode_json_string(raw: str) -> Any:
     if stripped.startswith("[") or stripped.startswith("{"):
         return json.loads(stripped)
 
-    # 某些 LCB 变体会把隐藏测试存为 base64(zlib(json)) 字符串。
+    # 某些 LCB 变体会把隐藏测试存为 base64(zlib(json)) 字符串；
+    # 也有变体会把 JSON 字符串先 pickle 再 zlib。
     decoded = base64.b64decode(stripped)
-    inflated = zlib.decompress(decoded).decode("utf-8")
-    return json.loads(inflated)
+    inflated = zlib.decompress(decoded)
+    try:
+        return json.loads(inflated.decode("utf-8"))
+    except UnicodeDecodeError:
+        payload = pickle.loads(inflated)
+        if isinstance(payload, str):
+            return json.loads(payload)
+        return payload
 
 
 def _parse_lcb_tests(raw: Any) -> list[OJTestCase]:
@@ -455,11 +503,13 @@ def load_livecodebench(
     if split != "test":
         raise ValueError("LiveCodeBench v1 loader currently only supports split='test'")
 
+    dataset_name = _find_livecodebench_local_script(version_tag) or "livecodebench/code_generation_lite"
     ds = _select_split(
-        "livecodebench/code_generation_lite",
+        dataset_name,
         split="test",
         local_path=local_path,
         version_tag=version_tag,
+        trust_remote_code=True,
     )
 
     problems: list[CodeProblem] = []
@@ -473,6 +523,14 @@ def load_livecodebench(
         except Exception:
             parsed_metadata = {"raw_metadata": raw_metadata}
 
+        try:
+            public_tests = _parse_lcb_tests(row.get("public_test_cases"))
+            private_tests = _parse_lcb_tests(row.get("private_test_cases"))
+        except ValueError as e:
+            if "Unsupported LiveCodeBench test type" in str(e):
+                continue
+            raise
+
         problems.append(
             CodeProblem(
                 task_id=task_id,
@@ -480,8 +538,8 @@ def load_livecodebench(
                 title=row.get("question_title") or None,
                 problem_statement=row.get("question_content", ""),
                 starter_code=row.get("starter_code", "") or "",
-                public_tests=_parse_lcb_tests(row.get("public_test_cases")),
-                private_tests=_parse_lcb_tests(row.get("private_test_cases")),
+                public_tests=public_tests,
+                private_tests=private_tests,
                 time_limit_seconds=None,
                 reference_solutions=[],
                 difficulty=row.get("difficulty"),
@@ -492,7 +550,11 @@ def load_livecodebench(
                     "contest_id": row.get("contest_id"),
                     "contest_date": row.get("contest_date"),
                     "version_tag": version_tag,
-                    "dataset_metadata": parsed_metadata if isinstance(parsed_metadata, dict) else {"value": parsed_metadata},
+                    "dataset_metadata": (
+                        parsed_metadata
+                        if isinstance(parsed_metadata, dict) and parsed_metadata
+                        else {"value": None if isinstance(parsed_metadata, dict) else parsed_metadata}
+                    ),
                 },
             )
         )

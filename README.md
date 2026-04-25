@@ -69,6 +69,19 @@
 - 旧的 `execute_code` / `test_list` / 函数补全协议已经退出主链路
 - 旧 MBPP/HumanEval 输出已归档到 `archive/legacy_outputs/2026-04-24/`
 
+当前四个 verl Parquet 文件已经准备好，可用于第一版 baseline：
+
+| 文件 | 用途 | 行数 |
+| --- | --- | ---: |
+| `data/verl/codecontests_train.parquet` | GRPO 训练集 | 9,698 |
+| `data/verl/codecontests_valid.parquet` | 训练过程 validation | 500 |
+| `data/verl/codecontests_test.parquet` | CodeContests held-out test | 500 |
+| `data/verl/livecodebench_test.parquet` | LiveCodeBench final/generalization eval | 611 |
+
+其中 CodeContests 的 valid/test 已从 train 中固定抽样补到 500 条，三个 CodeContests split 的 `task_id` 两两无交集。LiveCodeBench 文件较大，主要因为 hidden/private tests 的 input/output 很大，不是因为 prompt 很长。
+
+详细数据快照、schema、token 长度、文件大小和 baseline 建议见 `docs/verl_parquet_dataset_analysis.md`。
+
 当前已经冻结的 v1 数据 schema 方向是：
 
 - 保存原始题面 `problem_statement`
@@ -81,6 +94,35 @@
 
 环境协议的冻结说明在 `docs/env_protocol.md`，实现入口是 `src/env/tools.py`。
 相近项目的环境设计参考和后续生产化 checklist 在 `docs/env_design_references.md`。
+当前四个 Parquet 文件的分析记录在 `docs/verl_parquet_dataset_analysis.md`。
+
+## Baseline 状态
+
+当前阶段先测一个可复现 baseline，数据先不继续扩展。
+
+历史小数据实验使用 `374` 条训练样本跑 `7` epoch；现在训练集是 `9,698` 条。在当前配置下：
+
+```text
+train_batch_size = 128
+rollout.n = 4
+每 step = 128 × 4 = 512 条 rollout
+1 epoch ≈ floor(9698 / 128) = 75 steps
+```
+
+所以现在 1 epoch 约等于：
+
+```text
+75 × 512 = 38,400 条 rollout
+```
+
+已经明显大于旧实验完整 7 epoch 的 rollout 数量。第一版 baseline 建议先跑 `total_epochs=1`，不要直接沿用旧配置里的 `total_epochs=7`。
+
+prompt length 方面：
+
+- `max_prompt_length=512` 明显偏小，会覆盖不了大量 CodeContests prompt
+- `max_prompt_length=1024` 更适合第一版快速 baseline
+- `max_prompt_length=2048` 覆盖更好，但全参 GRPO 在 2xA800 80GB 上可能需要把 micro batch 降到 1
+- `response_length=1024` 是 multi-turn 整条 trajectory 的总 response budget，不是每一轮 assistant 的单轮上限
 
 ## 常用命令
 

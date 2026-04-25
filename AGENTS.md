@@ -9,16 +9,17 @@
 1. `README.md`
 2. `docs/env_protocol.md`
 3. `docs/env_design_references.md`
-4. `src/data/dataset.py`
-5. `src/env/tools.py`
-6. `src/env/sandbox.py`
-7. `src/env/code_env.py`
-8. `src/prompts.py`
-9. `src/data/verl_dataset.py`
-10. `src/verl_tools/oj_tools.py`
-11. `src/reward.py`
-12. `scripts/evaluate_with_verl.sh`
-13. `src/eval/evaluate.py`
+4. `docs/verl_parquet_dataset_analysis.md`
+5. `src/data/dataset.py`
+6. `src/env/tools.py`
+7. `src/env/sandbox.py`
+8. `src/env/code_env.py`
+9. `src/prompts.py`
+10. `src/data/verl_dataset.py`
+11. `src/verl_tools/oj_tools.py`
+12. `src/reward.py`
+13. `scripts/evaluate_with_verl.sh`
+14. `src/eval/evaluate.py`
 
 如果需要历史背景，可以查看 `obsidian/11-code-agent/`，但那个目录只是研究记录，不是当前仓库规范的来源。
 
@@ -43,6 +44,7 @@
 - `src/data/dataset.py` 中的 v1 schema 是当前数据协议的 source of truth
 - `data/verl` 应在实际训练服务器上由 `python3 -m src.data.verl_dataset` 重新生成，不要信任旧 parquet 缓存
 - `data/verl` 当前标准文件是 `codecontests_train.parquet`、`codecontests_valid.parquet`、`codecontests_test.parquet`、`livecodebench_test.parquet`
+- 当前四个标准 Parquet 已经完成一次本地整理，可作为第一版 baseline 输入；详细快照见 `docs/verl_parquet_dataset_analysis.md`
 
 ## 当前主链路
 
@@ -62,6 +64,36 @@
 如果出现取舍，优先保证环境协议一致性，而不是兼容旧 benchmark 习惯。
 
 当前阶段已经接通 OJ-like v1 的数据导出和评测主链路；旧评测链路、旧 verl 数据导出链路不再兼容。
+
+## 当前数据和 baseline 状态
+
+截至 2026-04-25，当前 `data/verl/` 下四个标准文件状态如下：
+
+| 文件 | 用途 | 行数 | 备注 |
+| --- | --- | ---: | --- |
+| `codecontests_train.parquet` | GRPO 训练 | 9,698 | 从原 train 中抽出部分样本补充 valid/test 后的训练集 |
+| `codecontests_valid.parquet` | 训练过程 validation | 500 | 原 valid 95 条 + train 抽样 405 条 |
+| `codecontests_test.parquet` | CodeContests held-out test | 500 | 原 test 122 条 + train 抽样 378 条 |
+| `livecodebench_test.parquet` | 最终泛化评测 | 611 | 文件很大，主要因为 hidden/private tests 很大 |
+
+当前四个文件共用 verl schema：
+
+- `data_source`
+- `prompt`
+- `ability`
+- `reward_model`
+- `extra_info`
+
+`prompt`、`reward_model`、`extra_info` 在 Parquet 中都是 JSON string。`extra_info` 保存每道题的 tool 创建参数，特别是 public/private tests、time limit 和 `max_submissions`。
+
+当前数据处理目标已经基本完成，下一步优先级是跑出可复现 baseline，而不是继续改数据。建议第一版 baseline 使用 1 epoch，不要沿用旧小数据实验里的 `total_epochs=7`。当前 `train_batch_size=128`、`rollout.n=4` 时，每个 step 是 512 条 rollout；`9698` 条训练数据约等于每 epoch 75 step，1 epoch 的 rollout 数量已经约为旧 374 条训练集跑 7 epoch 的 5.4 倍。
+
+prompt 长度方面：
+
+- `max_prompt_length=512` 明显太小。
+- `max_prompt_length=1024` 适合快速 baseline。
+- `max_prompt_length=2048` 数据覆盖更好，但 2xA800 80GB 全参 GRPO 可能需要降低 micro batch。
+- `response_length=1024` 是 multi-turn 整条 trajectory 的总 response budget，不是单轮 assistant 的 1024 tokens。
 
 ## 不要继续旧方向
 

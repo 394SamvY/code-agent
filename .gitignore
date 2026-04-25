@@ -12,3 +12,7 @@ __pycache__/
 
 # OS
 .DS_Store
+
+#data
+data
+.hf_cache

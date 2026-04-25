@@ -5,6 +5,7 @@ verl parquet export for the OJ-like v1 protocol.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -29,26 +30,37 @@ def _create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str, Any]
     }
 
 
+def _tool_create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str, dict[str, Any]]:
+    common = {
+        "time_limit_seconds": problem.time_limit_seconds,
+        "max_submissions": max_submissions,
+    }
+    return {
+        "run_public_tests": {
+            **common,
+            "public_tests": serialize_oj_tests(problem.public_tests),
+        },
+        "submit_solution": {
+            **common,
+            "private_tests": serialize_oj_tests(problem.private_tests),
+        },
+    }
+
+
 def problem_to_verl_record(
     problem: CodeProblem,
     max_submissions: int = 5,
 ) -> dict[str, Any]:
     """Convert a CodeProblem into a verl multi-turn training record."""
-    create_kwargs = _create_kwargs(problem, max_submissions=max_submissions)
+    tool_create_kwargs = _tool_create_kwargs(problem, max_submissions=max_submissions)
+    # `extra_info` 不是给模型看的 prompt；verl 会把它传给 tool layer，
+    # 让同一套工具在不同题目上使用不同的测试、时间限制和提交次数限制。
     extra_info = {
         "task_id": problem.task_id,
         "dataset": problem.dataset,
-        "title": problem.title,
-        "difficulty": problem.difficulty,
-        "metadata": problem.metadata,
-        "public_tests": create_kwargs["public_tests"],
-        "private_tests": create_kwargs["private_tests"],
-        "time_limit_seconds": problem.time_limit_seconds,
-        "max_submissions": max_submissions,
-        "create_kwargs": create_kwargs,
         "tools_kwargs": {
-            "run_public_tests": {"create_kwargs": create_kwargs},
-            "submit_solution": {"create_kwargs": create_kwargs},
+            name: {"create_kwargs": kwargs}
+            for name, kwargs in tool_create_kwargs.items()
         },
     }
     return {
@@ -57,35 +69,65 @@ def problem_to_verl_record(
         "ability": "code",
         "reward_model": {
             "style": "rule",
+            # OJ 任务的正确性由测试执行产生的 tool reward 决定。
+            # 这里保留 task_id，只作为 verl 的 ground-truth handle。
             "ground_truth": {
                 "task_id": problem.task_id,
-                "private_tests": create_kwargs["private_tests"],
             },
         },
         "extra_info": extra_info,
     }
 
 
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _serialize_record_for_parquet(record: dict[str, Any]) -> dict[str, Any]:
+    serialized = dict(record)
+    serialized["prompt"] = _json_dumps(record["prompt"])
+    serialized["reward_model"] = _json_dumps(record["reward_model"])
+    serialized["extra_info"] = _json_dumps(record["extra_info"])
+    return serialized
+
+
 def problems_to_verl_parquet(
     problems: list[CodeProblem],
     output_path: str | Path,
     max_submissions: int = 5,
+    batch_size: int = 128,
 ) -> Path:
     """Write CodeProblem records to a verl-compatible parquet file."""
     try:
-        import pandas as pd
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
-            "Install pandas and pyarrow to export verl parquet files."
+            "Install pyarrow to export verl parquet files."
         ) from e
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    records = [
-        problem_to_verl_record(problem, max_submissions=max_submissions)
-        for problem in problems
-    ]
-    pd.DataFrame(records).to_parquet(output, index=False)
+    temp_output = output.with_name(output.name + ".tmp")
+    writer = None
+    try:
+        for start in range(0, len(problems), batch_size):
+            batch = [
+                _serialize_record_for_parquet(
+                    problem_to_verl_record(problem, max_submissions=max_submissions)
+                )
+                for problem in problems[start : start + batch_size]
+            ]
+            if not batch:
+                continue
+            table = pa.Table.from_pylist(batch)
+            if writer is None:
+                writer = pq.ParquetWriter(temp_output, table.schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+    temp_output.replace(output)
     return output
 
 
