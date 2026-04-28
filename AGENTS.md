@@ -18,8 +18,7 @@
 10. `src/data/verl_dataset.py`
 11. `src/verl_tools/oj_tools.py`
 12. `src/reward.py`
-13. `scripts/evaluate_with_verl.sh`
-14. `src/eval/evaluate.py`
+13. `scripts/evaluate_baseline_with_verl.sh`
 
 如果需要历史背景，可以查看 `obsidian/11-code-agent/`，但那个目录只是研究记录，不是当前仓库规范的来源。
 
@@ -58,8 +57,7 @@
 - `src/data/verl_dataset.py` 导出四个显式 verl parquet，写入两工具 `create_kwargs`
 - `src/verl_tools/oj_tools.py` 是 verl BaseTool 适配层
 - `src/reward.py` 给 verl training / validation 暴露 `score` 和 `acc`
-- `scripts/evaluate_with_verl.sh` 是当前主评测入口，复用 verl `main_ppo` validation 路径
-- `src/eval/evaluate.py` 只保留为轻量本地 debug harness，不作为主评测路径
+- `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline 评测入口，复用 verl `main_ppo` validation 路径
 
 如果出现取舍，优先保证环境协议一致性，而不是兼容旧 benchmark 习惯。
 
@@ -107,7 +105,7 @@ prompt 长度方面：
 
 `archive/legacy_outputs/2026-04-24/` 是旧 MBPP/HumanEval 和旧 GRPO 输出归档，只作历史参考。`outputs/` 是当前新运行的写入位置，不是规范来源。
 
-`/Users/yang/code/verl/verl/trainer/main_eval.py` 只是对已有 responses 做离线 reward 打分，不是当前 OJ-like 在线工具评测入口。需要复用 verl 训练时 agent loop 时，优先走 `scripts/evaluate_with_verl.sh`。
+`/Users/yang/code/verl/verl/trainer/main_eval.py` 只是对已有 responses 做离线 reward 打分，不是当前 OJ-like 在线工具评测入口。需要复用 verl 训练时 agent loop 时，优先走 `scripts/evaluate_baseline_with_verl.sh`。
 
 ## 当前默认假设
 

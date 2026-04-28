@@ -240,6 +240,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
+    actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.rollout.val_kwargs.temperature=0 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=false \

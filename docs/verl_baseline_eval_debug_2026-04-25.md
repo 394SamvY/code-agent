@@ -53,7 +53,6 @@ bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 - `/root/autodl-tmp/models/Qwen3-8B` 存在。
 - 当前环境安装了 `verl 0.7.1`。
 
-由于当前 Codex sandbox 的 `bwrap` namespace 初始化失败，读取文件和执行检查命令时使用了提权执行。
 
 ### 2. Hydra 配置字段检查
 
@@ -151,18 +150,6 @@ EOFError
 
 仍然在 SGLang scheduler 启动时 OOM。
 
-### 6. 第四次更保守 smoke test 被用户中断
-
-准备尝试：
-
-```bash
-VAL_MAX_SAMPLES=1 VAL_BATCH_SIZE=1 LOG_VAL_GENERATIONS=1 AGENT_WORKERS=1 \
-MAX_PROMPT_LENGTH=1024 MAX_RESPONSE_LENGTH=512 \
-GPU_MEMORY_UTILIZATION=0.10 MAX_NUM_BATCHED_TOKENS=1536 MAX_NUM_SEQS=4 \
-bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-```
-
-该尝试尚未得到完整结果，用户中断了当前 turn。
 
 中断后检查：
 

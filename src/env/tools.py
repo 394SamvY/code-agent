@@ -311,6 +311,14 @@ def reward_for_result(result: dict[str, Any]) -> float:
     """Submit-dominant reward policy.
 
     Public tests are diagnostic only; they do not contribute reward.
+
+    TODO: reward 调优方向（可做的文章很多）：
+      - public tests 全部通过时给少量 shaping reward（如 0.05），引导模型先对齐公开用例
+      - submit 失败时根据失败比例阶梯给分：0~0.2 太粗，可以更细粒度
+      - 区分 verdict 类型：runtime_error 比 wrong_answer 更严重，可以不同惩罚
+      - 解空间探索奖励：调用工具次数、代码修改幅度、尝试不同算法
+      - 最终 reward 聚合策略：目前是 max(tool_rewards)，可以尝试 avg、最后一次、递减折扣
+      - 代码风格/简洁度：字符数、运行时间作为辅助奖励
     """
     total = result["total"]
     pass_rate = result["passed"] / total if total else 0.0

@@ -65,8 +65,8 @@
 - `CodeContests` 导出 `codecontests_train/valid/test` parquet
 - `LiveCodeBench` 用作最终 eval/test 数据
 - 主评测入口复用 verl validation，尽量和训练 rollout / tool / reward 保持一致
-- `src.eval.evaluate` 只保留为轻量本地 debug harness
 - 旧的 `execute_code` / `test_list` / 函数补全协议已经退出主链路
+- 旧的本地 evaluate harness 已删除，避免和 verl agent loop 分叉
 - 旧 MBPP/HumanEval 输出已归档到 `archive/legacy_outputs/2026-04-24/`
 
 当前四个 verl Parquet 文件已经准备好，可用于第一版 baseline：
@@ -146,12 +146,6 @@ python3 -m src.data.verl_dataset \
 python3 -m src.env.tools
 ```
 
-用 verl validation 跑和训练一致的 tool / rollout / reward 链路：
-
-```bash
-bash scripts/evaluate_with_verl.sh livecodebench_test /root/autodl-tmp/models/Qwen3-8B 1
-```
-
 baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；默认使用所有可见 GPU：
 
 ```bash
@@ -167,21 +161,10 @@ CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2
   bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 ```
 
-可选：用轻量本地 harness 做快速调试。这个入口不作为主评测路径：
-
-```bash
-python3 -m src.eval.evaluate \
-  --model /root/autodl-tmp/models/Qwen3-8B \
-  --datasets livecodebench \
-  --mode multi_turn \
-  --max_samples 1
-```
-
 说明：
 
-- `scripts/evaluate_with_verl.sh` 复用 `verl` 的 `main_ppo` validation 路径，行为更接近训练时 rollout
 - `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
-- `src.eval.evaluate` 只保留为轻量、本地可调试的评测 harness
+- `scripts/evaluate_baseline_with_verl.sh` 复用 `verl` 的 `main_ppo` validation 路径，行为更接近训练时 rollout
 - `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
 
 本地协议测试：
@@ -201,7 +184,6 @@ python3 -X pycache_prefix=/tmp/code-agent-pycache -m compileall src tests
 src/
   data/          数据集加载、OJ schema、verl parquet 导出
   env/           OJ judge、两工具协议、sandbox
-  eval/          LiveCodeBench / CodeContests 评测入口
   verl_tools/    verl BaseTool 适配层
 scripts/         训练、评测、数据准备入口
 configs/verl/    verl 训练与工具配置
@@ -217,8 +199,7 @@ configs/verl/    verl 训练与工具配置
 - `src/env/sandbox.py`
 - `src/env/code_env.py`
 - `src/verl_tools/oj_tools.py`
-- `scripts/evaluate_with_verl.sh`
-- `src/eval/evaluate.py`
+- `scripts/evaluate_baseline_with_verl.sh`
 
 历史输出和旧实验记录在：
 
@@ -230,7 +211,7 @@ configs/verl/    verl 训练与工具配置
 建议按下面顺序理解项目：
 
 - 先读 `AGENTS.md`，了解当前协作规范和项目硬约束
-- 再看 `src/data/`、`src/env/`、`src/eval/` 里的主链路代码
+- 再看 `src/data/`、`src/env/`、`src/verl_tools/` 里的主链路代码
 - 训练与评测入口集中在 `scripts/` 下
 
 顶层文档分工：

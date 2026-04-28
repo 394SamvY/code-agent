@@ -4,7 +4,6 @@ Lightweight OJ-like e2e protocol tests.
 
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -14,41 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.dataset import CodeProblem, OJTestCase
 from src.data.verl_dataset import prepare_verl_datasets, problem_to_verl_record
-from src.eval.evaluate import evaluate_multi_turn, evaluate_one_shot
+from src.env.code_env import CodeEnvironment
 
 
 SOLUTION = "import sys\nx = int(sys.stdin.read())\nprint(x + 1)"
-
-
-class _Tokenizer:
-    def apply_chat_template(self, *args, **kwargs):
-        return "prompt"
-
-
-class _Choice:
-    def __init__(self, text: str):
-        self.text = text
-
-
-class _Response:
-    def __init__(self, text: str):
-        self.choices = [_Choice(text)]
-
-
-class _Completions:
-    def __init__(self, responses: list[str]):
-        self._responses = responses
-        self._index = 0
-
-    def create(self, **kwargs):
-        text = self._responses[self._index]
-        self._index += 1
-        return _Response(text)
-
-
-class _Client:
-    def __init__(self, responses: list[str]):
-        self.completions = _Completions(responses)
 
 
 def _problem() -> CodeProblem:
@@ -63,24 +31,24 @@ def _problem() -> CodeProblem:
     )
 
 
-def _tool_call(name: str, code: str) -> str:
-    return "<tool_call>\n" + json.dumps(
-        {"name": name, "arguments": {"code": code}}
-    ) + "\n</tool_call>"
-
-
 def test_problem_to_verl_record_contains_create_kwargs():
     problem = _problem()
 
     record = problem_to_verl_record(problem)
-    create_kwargs = record["extra_info"]["create_kwargs"]
+    tools_kwargs = record["extra_info"]["tools_kwargs"]
+    public_create_kwargs = tools_kwargs["run_public_tests"]["create_kwargs"]
+    submit_create_kwargs = tools_kwargs["submit_solution"]["create_kwargs"]
 
     assert record["data_source"] == "codecontests"
     assert record["ability"] == "code"
-    assert create_kwargs["max_submissions"] == 5
-    assert create_kwargs["time_limit_seconds"] == 2.0
-    assert create_kwargs["public_tests"] == [{"input": "1\n", "output": "2\n"}]
-    assert create_kwargs["private_tests"] == [{"input": "41\n", "output": "42\n"}]
+    assert public_create_kwargs["max_submissions"] == 5
+    assert public_create_kwargs["time_limit_seconds"] == 2.0
+    assert public_create_kwargs["public_tests"] == [{"input": "1\n", "output": "2\n"}]
+    assert "private_tests" not in public_create_kwargs
+    assert submit_create_kwargs["max_submissions"] == 5
+    assert submit_create_kwargs["time_limit_seconds"] == 2.0
+    assert submit_create_kwargs["private_tests"] == [{"input": "41\n", "output": "42\n"}]
+    assert "public_tests" not in submit_create_kwargs
 
     print("[PASS] test_problem_to_verl_record_contains_create_kwargs")
 
@@ -136,44 +104,36 @@ def test_prepare_verl_datasets_writes_explicit_source_split_files():
     print("[PASS] test_prepare_verl_datasets_writes_explicit_source_split_files")
 
 
-def test_fake_one_shot_submits_private_tests():
-    result = evaluate_one_shot(
-        client=_Client(["```python\n" + SOLUTION + "\n```"]),
-        tokenizer=_Tokenizer(),
-        problems=[_problem()],
-    )
+def test_code_environment_submit_uses_private_tests():
+    env = CodeEnvironment(_problem())
 
-    assert result["pass@1"] == 1.0
-    assert result["results"][0]["verdict"] == "accepted"
-    assert result["results"][0]["submission_history"][0]["passed"] == 1
+    result = env.submit_solution(SOLUTION)
 
-    print("[PASS] test_fake_one_shot_submits_private_tests")
+    assert result["verdict"] == "accepted"
+    assert result["passed"] == 1
+    assert env.is_accepted is True
+
+    print("[PASS] test_code_environment_submit_uses_private_tests")
 
 
-def test_fake_multi_turn_public_then_submit():
-    result = evaluate_multi_turn(
-        client=_Client([
-            _tool_call("run_public_tests", SOLUTION),
-            _tool_call("submit_solution", SOLUTION),
-        ]),
-        tokenizer=_Tokenizer(),
-        problems=[_problem()],
-        max_tool_calls=4,
-    )
+def test_code_environment_public_then_submit_tool_flow():
+    env = CodeEnvironment(_problem())
 
-    item = result["results"][0]
-    assert result["pass@1"] == 1.0
-    assert item["verdict"] == "accepted"
-    assert len(item["public_results_history"]) == 1
-    assert len(item["submission_history"]) == 1
-    assert item["num_tool_calls"] == 2
+    public_observation = env.execute_tool("run_public_tests", code=SOLUTION)
+    submit_observation = env.execute_tool("submit_solution", code=SOLUTION)
 
-    print("[PASS] test_fake_multi_turn_public_then_submit")
+    assert "run_public_tests: accepted" in public_observation
+    assert "submit_solution: accepted" in submit_observation
+    assert env.tool_history == ["run_public_tests", "submit_solution"]
+    assert len(env.public_results_history) == 1
+    assert len(env.submission_history) == 1
+
+    print("[PASS] test_code_environment_public_then_submit_tool_flow")
 
 
 if __name__ == "__main__":
     test_problem_to_verl_record_contains_create_kwargs()
     test_prepare_verl_datasets_writes_explicit_source_split_files()
-    test_fake_one_shot_submits_private_tests()
-    test_fake_multi_turn_public_then_submit()
+    test_code_environment_submit_uses_private_tests()
+    test_code_environment_public_then_submit_tool_flow()
     print("\nAll tests passed!")
