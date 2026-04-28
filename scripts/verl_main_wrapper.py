@@ -9,7 +9,9 @@ import 并运行 verl。
 import json
 import sys
 
+import hydra
 import numpy as np
+import ray
 
 # 保留标准库 json 原本的 default 逻辑。遇到我们不关心的类型时，
 # 仍然交回原实现处理，避免改变其它 JSON 行为。
@@ -29,14 +31,31 @@ def _numpy_safe_default(self, obj):
     return _original_default(self, obj)
 
 
-# 替换当前进程里的 JSONEncoder.default。之后 verl 内部任何 json.dump(s)
-# 遇到 numpy 类型，都会自动走上面的转换逻辑。
+# 替换当前 driver 进程里的 JSONEncoder.default。validation 所在的
+# Ray TaskRunner actor 会在 CodeAgentTaskRunner.run 内安装运行时补丁。
 json.JSONEncoder.default = _numpy_safe_default
 
-# main_ppo.main 是 Hydra 入口。--config-path、--config-name 和配置覆盖项
-# 会由 Hydra 直接从 sys.argv 读取，所以这个 wrapper 不解析、不改动参数，
-# 只负责提前打补丁，然后调用 main()。
-from verl.trainer.main_ppo import main  # noqa: E402
+from verl.experimental.reward_loop import migrate_legacy_reward_impl  # noqa: E402
+from verl.trainer.main_ppo import TaskRunner, run_ppo  # noqa: E402
+from verl.utils.device import auto_set_device  # noqa: E402
+
+
+class CodeAgentTaskRunner(TaskRunner):
+    """TaskRunner that installs code-agent verl patches inside the Ray actor."""
+
+    def run(self, config):
+        from src.verl_runtime_patch import apply_patches
+
+        apply_patches()
+        return super().run(config)
+
+
+@hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
+def main(config):
+    auto_set_device(config)
+    config = migrate_legacy_reward_impl(config)
+    task_runner_class = ray.remote(num_cpus=1)(CodeAgentTaskRunner)
+    run_ppo(config, task_runner_class=task_runner_class)
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -146,7 +146,8 @@ python3 -m src.data.verl_dataset \
 python3 -m src.env.tools
 ```
 
-baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；默认使用所有可见 GPU：
+baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；默认使用所有可见 GPU，
+并通过单个 verl 进程统一调度多卡 SGLang server：
 
 ```bash
 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
@@ -157,14 +158,15 @@ bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 
 ```bash
 VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2048 \
-  bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 ```
 
 说明：
 
 - `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
-- `scripts/evaluate_baseline_with_verl.sh` 复用 `verl` 的 `main_ppo` validation 路径，行为更接近训练时 rollout
+- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`
+- validation 会先增量写 `generations/partial_0.jsonl`，整轮结束后再写 verl 原始的 `generations/0.jsonl`
+- 不再维护“两张卡各自启动一个 verl 进程”的分片 fallback；当前评测应通过单个 verl 进程统一调度多卡
 - `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
 
 本地协议测试：

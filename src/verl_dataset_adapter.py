@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import logging
+import traceback
 from typing import Any
 
 import torch
 
 from verl.utils.dataset.rl_dataset import RLHFDataset
+from verl.utils.tokenizer import normalize_token_ids
 
 
 logger = logging.getLogger(__name__)
@@ -48,8 +50,8 @@ class OJLikeRLHFDataset(RLHFDataset):
       1. eval 脚本传 custom_cls.path / custom_cls.name
       2. main_ppo 的 create_rl_dataset → get_dataset_class → load_extern_object
       3. 加载本类，替代默认 RLHFDataset
-      4. __init__ → _read_files_and_tokenize → maybe_filter_out_long_prompts → doc2len
-         （其中 _build_messages 会被调用，本类先 decode 再调父类逻辑）
+      4. __init__ → _read_files_and_tokenize → maybe_filter_out_long_prompts
+         （本类覆盖该方法，确保过滤阶段按 decode 后的真实 chat messages 计数）
       5. rollout 时 __getitem__ 逐条取 sample，本类 decode 后再组装 raw_prompt / tools_kwargs 等字段
     """
 
@@ -78,6 +80,51 @@ class OJLikeRLHFDataset(RLHFDataset):
         """
         example = self._decode_row(example)
         return super()._build_messages(example)
+
+    def maybe_filter_out_long_prompts(self, dataframe=None):
+        """Filter overlong prompts after decoding JSON string fields.
+
+        verl's text-only RLHFDataset path computes prompt length from
+        ``doc[prompt_key]`` directly instead of calling ``_build_messages``.
+        Our parquet stores ``prompt`` as a JSON string, so the parent method
+        under-counts and leaves overlong prompts in validation batches.
+        """
+        if self.processor is not None or not self.filter_overlong_prompts:
+            return super().maybe_filter_out_long_prompts(dataframe)
+
+        tokenizer = self.tokenizer
+        prompt_key = self.prompt_key
+
+        def doc2len(doc) -> int:
+            try:
+                doc = self._decode_row(doc)
+                apply_kwargs = dict(**self.apply_chat_template_kwargs)
+                if self.tool_schemas is not None:
+                    apply_kwargs["tools"] = self.tool_schemas
+
+                apply_kwargs.pop("tokenize", None)
+                apply_kwargs.pop("return_dict", None)
+                apply_kwargs.pop("return_tensors", None)
+
+                tokenized_prompt = tokenizer.apply_chat_template(
+                    doc[prompt_key],
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    **apply_kwargs,
+                )
+                return len(normalize_token_ids(tokenized_prompt))
+            except Exception:
+                print("Error processing one of the samples, skipping...")
+                traceback.print_exc()
+                return self.max_prompt_length + 1
+
+        dataframe = dataframe.filter(
+            lambda doc: doc2len(doc) <= self.max_prompt_length,
+            num_proc=self.num_workers,
+            desc=f"Filtering prompts longer than {self.max_prompt_length} tokens",
+        )
+        print(f"filter dataset len: {len(dataframe)}")
+        return dataframe
 
     def __getitem__(self, item):
         """rollout / validation 时 verl 逐条取 sample 的入口。

@@ -10,8 +10,8 @@
 #   bash scripts/evaluate_baseline_with_verl.sh /root/autodl-tmp/code-agent/data/verl/codecontests_test.parquet /root/autodl-tmp/models/Qwen3-8B
 #
 # Useful overrides:
-#   MAX_PROMPT_LENGTH=2048 MAX_RESPONSE_LENGTH=2048 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-#   CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 GPU_MEMORY_UTILIZATION=0.40 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+#   MAX_PROMPT_LENGTH=4096 MAX_RESPONSE_LENGTH=8192 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+#   CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 #   VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 
 set -euo pipefail
@@ -25,6 +25,16 @@ MODEL_PATH="${2:-/root/autodl-tmp/models/Qwen3-8B}"
 CONFIG_PATH="$PROJECT_DIR/configs/verl"
 CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_DIR/outputs/verl_baseline_eval}"
+
+normalize_positive_int() {
+    local value="${1:-}"
+    local fallback="$2"
+    if [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$value"
+    else
+        echo "$fallback"
+    fi
+}
 
 detect_cuda_visible_devices() {
     if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
@@ -67,23 +77,23 @@ if [ "$VISIBLE_GPU_COUNT" -lt 1 ]; then
 fi
 
 NUM_GPUS="${NUM_GPUS:-$VISIBLE_GPU_COUNT}"
-MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-2048}"
-MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-2048}"
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-4096}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-8}"
 VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
 TRUNCATION="${TRUNCATION:-middle}"
 FILTER_OVERLONG_PROMPTS="${FILTER_OVERLONG_PROMPTS:-true}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
-AGENT_WORKERS="${AGENT_WORKERS:-1}"
+AGENT_WORKERS="${AGENT_WORKERS:-8}"
 FSDP_MODEL_DTYPE="${FSDP_MODEL_DTYPE:-bf16}"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.40}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.70}"
 ROLLOUT_TP="${ROLLOUT_TP:-1}"
-MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4096}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-16384}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
-LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-20}"
+LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-1}"
 TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
 
 if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
@@ -98,12 +108,13 @@ fi
 
 # Multi-GPU baseline defaults. Caller may override these before invoking.
 export CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_RESOLVED"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export OMP_NUM_THREADS="$(normalize_positive_int "${OMP_NUM_THREADS:-}" 4)"
 export TORCHDYNAMO_DISABLE="${TORCHDYNAMO_DISABLE:-1}"
 export VERL_LOGGING_LEVEL="${VERL_LOGGING_LEVEL:-INFO}"
 export RAY_DEDUP_LOGS="${RAY_DEDUP_LOGS:-0}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
-export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
+export RAY_DISABLE_DOCKER_CPU_WARNING="${RAY_DISABLE_DOCKER_CPU_WARNING:-1}"
+export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 case "$DATASET_ARG" in
     codecontests_valid)
@@ -161,9 +172,11 @@ mkdir -p "$VALIDATION_DIR" "$CHECKPOINT_DIR"
 # Save the full console stream next to generations/checkpoints for reproducibility.
 exec > >(tee "$LOG_FILE") 2>&1
 
-echo "Generating tool_config.yaml from TOOLS_SCHEMA..."
-python3 -m src.env.tools
-echo ""
+if [ "${GENERATE_TOOL_CONFIG:-1}" = "1" ]; then
+    echo "Generating tool_config.yaml from TOOLS_SCHEMA..."
+    python3 -m src.env.tools
+    echo ""
+fi
 
 echo "==== verl OJ-like baseline eval ===="
 echo "  dataset:              $DATASET_TAG"
@@ -189,6 +202,7 @@ echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION"
 echo "  max_batched_tokens:   $MAX_NUM_BATCHED_TOKENS"
 echo "  max_num_seqs:         $MAX_NUM_SEQS"
 echo "  enforce_eager:        $ENFORCE_EAGER"
+echo "  patch_verl:           task_runner"
 echo "  output:               $RUN_DIR"
 echo "  log_file:             $LOG_FILE"
 echo ""
@@ -210,6 +224,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     trainer.rollout_data_dir="$RUN_DIR/rollout_data" \
     trainer.validation_data_dir="$VALIDATION_DIR" \
     trainer.default_local_dir="$CHECKPOINT_DIR" \
+    ++ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH="$PYTHONPATH" \
     data.train_files="$TRAIN_STUB_FILE" \
     data.val_files="$VAL_FILE" \
     data.train_batch_size="$TRAIN_BATCH_SIZE" \
