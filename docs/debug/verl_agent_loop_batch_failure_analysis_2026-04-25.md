@@ -1,5 +1,7 @@
 # verl agent loop batch failure analysis 2026-04-25
 
+> 状态说明：本文是 2026-04-25 的早期调试判断，其中关于“主要是 multi-turn 变长 trajectory batch 不安全”的结论已被 2026-04-28 的进一步调试修正。当前结论以 `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 和 `docs/project_status.md` 为准。
+
 本文记录 `scripts/evaluate_baseline_with_verl.sh codecontests_test` 在全量 baseline eval 中反复失败的原因。
 
 结论先行：这不是显存不足，也不是 OJ tool / reward / parquet JSON 适配问题；核心是当前 `verl 0.7.1` experimental multi-turn agent loop 对同一个 worker 内多条样本的最终 prompt 长度处理不安全。只要一个 eval batch 中不同样本经过 multi-turn 后的最终 `prompt_ids` 长度不同，`AgentLoopWorker._postprocess()` 会直接 `torch.cat` 报错。
@@ -269,4 +271,3 @@ MAX_NUM_SEQS=32
 调高后，SGLang 每卡显存占用从约 `37GB` 提升到约 `54GB`，但只要 `VAL_BATCH_SIZE>1`，仍会撞上 agent-loop shape bug。
 
 因此并行度的关键约束不是 GPU memory，而是 verl agent loop 对 variable-length multi-turn outputs 的 batch 后处理能力。
-

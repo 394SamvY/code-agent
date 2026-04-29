@@ -1,7 +1,7 @@
 # OJ-like 环境设计参考
 
 本文档记录对当前 OJ-like v1 环境设计有参考价值的外部系统。
-`docs/env_protocol.md` 仍然是协议 source of truth；本文档只提供设计背景和取舍依据。
+`docs/specs/env_protocol.md` 仍然是协议 source of truth；本文档只提供设计背景和取舍依据。
 
 ## 当前结论
 

@@ -1,7 +1,7 @@
 # verl baseline eval 调试记录 2026-04-28
 
 本文记录 2*A800 80GB 上继续调试 OJ-like baseline validation 的过程。本次结论修正了
-`docs/verl_agent_loop_batch_failure_analysis_2026-04-25.md` 中“主要是多轮变长
+`docs/debug/verl_agent_loop_batch_failure_analysis_2026-04-25.md` 中“主要是多轮变长
 trajectory batch 不安全”的早期判断。
 
 ## 目标
@@ -72,7 +72,7 @@ FILTER_OVERLONG_PROMPTS=true
 LOG_VAL_GENERATIONS=1
 ```
 
-这个分配依据是 `docs/verl_parquet_dataset_analysis.md` 的 prompt 分布：`4096`
+这个分配依据是 `docs/specs/verl_parquet_dataset_analysis.md` 的 prompt 分布：`4096`
 已经覆盖 LiveCodeBench test 全部样本，CodeContests test 也只剩 1/500 条超过上限；
 把同样的 12288 总上下文预算更多留给 multi-turn response 更合理。
 

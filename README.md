@@ -58,6 +58,8 @@
 
 ## 当前实现状态
 
+当前进度、验证状态、blocker 和下一步统一维护在 `docs/project_status.md`。本节只保留稳定的主链路概览。
+
 当前 e2e 主链路已经接到 OJ-like v1 协议：
 
 - `CodeProblem` 统一题目 schema
@@ -67,7 +69,7 @@
 - 主评测入口复用 verl validation，尽量和训练 rollout / tool / reward 保持一致
 - 旧的 `execute_code` / `test_list` / 函数补全协议已经退出主链路
 - 旧的本地 evaluate harness 已删除，避免和 verl agent loop 分叉
-- 旧 MBPP/HumanEval 输出已归档到 `archive/legacy_outputs/2026-04-24/`
+- 旧 MBPP/HumanEval 输出已归档到 `docs/legacy/2026-04-24-legacy-outputs/`
 
 当前四个 verl Parquet 文件已经准备好，可用于第一版 baseline：
 
@@ -80,7 +82,7 @@
 
 其中 CodeContests 的 valid/test 已从 train 中固定抽样补到 500 条，三个 CodeContests split 的 `task_id` 两两无交集。LiveCodeBench 文件较大，主要因为 hidden/private tests 的 input/output 很大，不是因为 prompt 很长。
 
-详细数据快照、schema、token 长度、文件大小和 baseline 建议见 `docs/verl_parquet_dataset_analysis.md`。
+详细数据快照、schema、token 长度、文件大小和 baseline 建议见 `docs/specs/verl_parquet_dataset_analysis.md`。
 
 当前已经冻结的 v1 数据 schema 方向是：
 
@@ -92,9 +94,9 @@
 
 当前 schema 的 source of truth 在 `src/data/dataset.py`。
 
-环境协议的冻结说明在 `docs/env_protocol.md`，实现入口是 `src/env/tools.py`。
-相近项目的环境设计参考和后续生产化 checklist 在 `docs/env_design_references.md`。
-当前四个 Parquet 文件的分析记录在 `docs/verl_parquet_dataset_analysis.md`。
+环境协议的冻结说明在 `docs/specs/env_protocol.md`，实现入口是 `src/env/tools.py`。
+相近项目的环境设计参考和后续生产化 checklist 在 `docs/references/env_design_references.md`。
+当前四个 Parquet 文件的分析记录在 `docs/specs/verl_parquet_dataset_analysis.md`。
 
 ## Baseline 状态
 
@@ -193,8 +195,9 @@ configs/verl/    verl 训练与工具配置
 
 当前重点相关文件包括：
 
-- `docs/env_protocol.md`
-- `docs/env_design_references.md`
+- `docs/specs/env_protocol.md`
+- `docs/specs/verl_parquet_dataset_analysis.md`
+- `docs/references/env_design_references.md`
 - `src/data/dataset.py`
 - `src/data/verl_dataset.py`
 - `src/env/tools.py`
@@ -205,18 +208,27 @@ configs/verl/    verl 训练与工具配置
 
 历史输出和旧实验记录在：
 
-- `archive/legacy_outputs/2026-04-24/`
-- `archive/`
+- `docs/legacy/2026-04-24-legacy-outputs/`
+- `docs/legacy/`
 
 ## 快速开始
 
 建议按下面顺序理解项目：
 
 - 先读 `AGENTS.md`，了解当前协作规范和项目硬约束
+- 再读 `docs/project_status.md`，了解当前进度、验证状态和下一步
 - 再看 `src/data/`、`src/env/`、`src/verl_tools/` 里的主链路代码
 - 训练与评测入口集中在 `scripts/` 下
 
 顶层文档分工：
 
-- `README.md`：面向外部读者，解释项目目标、方法与当前方向
-- `AGENTS.md`：面向后续协作者，规定实现优先级与当前约束
+- `README.md`：面向外部读者，解释项目目标、方法、常用命令和当前方向
+- `AGENTS.md`：面向代码 agent，规定实现优先级、开工阅读顺序与当前约束
+- `CLAUDE.md`：Claude Code 专属入口，只保留工具差异和指向公共规范的链接
+- `docs/project_status.md`：当前进度、验证状态、blocker、下一步和交接摘要
+- `docs/specs/`：稳定协议、schema、接口和数据契约
+- `docs/operations/`：运行、训练、评测、部署和排障手册
+- `docs/references/`：参考资料、源码阅读路线和设计背景
+- `docs/decisions/`：长期决策记录，包括 RL-only、OJ-like 两工具协议和 verl validation baseline 取舍
+- `docs/debug/`：调试记录、失败分析和历史 bug 过程
+- `docs/legacy/`：已退出当前主线的大块历史输出、旧实验和旧训练资产

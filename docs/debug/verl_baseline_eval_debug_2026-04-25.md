@@ -1,5 +1,7 @@
 # verl baseline eval 调试记录 2026-04-25
 
+> 状态说明：本文保留 2026-04-25 的调试过程和历史上下文。后续 2*A800 统一调度、JSON-string prompt 过滤修复、partial dump 和禁止 `sitecustomize.py` 的当前结论，以 `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 和 `docs/project_status.md` 为准。
+
 本文记录一次目标为“尽量复用 verl agent loop 做 OJ-like baseline 评测”的调试过程。
 
 ## 目标
@@ -179,7 +181,7 @@ EOFError
 
 `data.max_prompt_length=2048` 是当前更合理的 baseline 档位。
 
-根据 `docs/verl_parquet_dataset_analysis.md`：
+根据 `docs/specs/verl_parquet_dataset_analysis.md`：
 
 - `codecontests_test.parquet` 只有 `4/500` 条超过 2048。
 - `livecodebench_test.parquet` 只有 `5/611` 条超过 2048。
@@ -274,10 +276,12 @@ bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 
 ## 下个上下文提示词
 
+> 历史提示词：这段提示词只反映 2026-04-25 当时的交接状态。新的交接入口是 `docs/project_status.md`。
+
 可以把下面这段直接给下一个 Codex 上下文：
 
 ```text
-我们在 /root/autodl-tmp/code-agent 做 OJ-like code agent baseline。请先读 AGENTS.md、README.md、docs/env_protocol.md、docs/verl_parquet_dataset_analysis.md、docs/verl_baseline_eval_debug_2026-04-25.md。
+我们在 /root/autodl-tmp/code-agent 做 OJ-like code agent baseline。请先读 AGENTS.md、README.md、docs/specs/env_protocol.md、docs/specs/verl_parquet_dataset_analysis.md、docs/debug/verl_baseline_eval_debug_2026-04-25.md。
 
 目标：继续把 baseline 评测脚本做成可在多卡机器上一键跑通，评测集是 data/verl/codecontests_test.parquet 和 data/verl/livecodebench_test.parquet，一次只跑一个。必须尽量复用 verl main_ppo validation 的 multi-turn agent loop、tool layer 和 src/reward.py，不要自己写 agent loop，不要重新引入 execute_code/test_list/函数补全协议，不要下载数据或模型。
 

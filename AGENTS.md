@@ -7,18 +7,19 @@
 在修改代码之前，按下面顺序阅读：
 
 1. `README.md`
-2. `docs/env_protocol.md`
-3. `docs/env_design_references.md`
-4. `docs/verl_parquet_dataset_analysis.md`
-5. `src/data/dataset.py`
-6. `src/env/tools.py`
-7. `src/env/sandbox.py`
-8. `src/env/code_env.py`
-9. `src/prompts.py`
-10. `src/data/verl_dataset.py`
-11. `src/verl_tools/oj_tools.py`
-12. `src/reward.py`
-13. `scripts/evaluate_baseline_with_verl.sh`
+2. `docs/project_status.md`
+3. `docs/specs/env_protocol.md`
+4. `docs/references/env_design_references.md`
+5. `docs/specs/verl_parquet_dataset_analysis.md`
+6. `src/data/dataset.py`
+7. `src/env/tools.py`
+8. `src/env/sandbox.py`
+9. `src/env/code_env.py`
+10. `src/prompts.py`
+11. `src/data/verl_dataset.py`
+12. `src/verl_tools/oj_tools.py`
+13. `src/reward.py`
+14. `scripts/evaluate_baseline_with_verl.sh`
 
 如果需要历史背景，可以查看 `obsidian/11-code-agent/`，但那个目录只是研究记录，不是当前仓库规范的来源。
 
@@ -37,13 +38,15 @@
 - `max_tool_calls` 只是工程 hard cap，用来防止 rollout 死循环，不是 OJ 规则
 - `run_public_tests` 不给 reward，只返回 observation
 - `submit_solution` 是主 reward 来源：accepted 为 1.0，failed submit 最多按 private pass rate 给弱 shaped reward
-- 顶层规范文档只维护 `README.md` 和 `AGENTS.md`
-- 环境协议说明维护在 `docs/env_protocol.md`
-- 相近项目参考和生产化 checklist 维护在 `docs/env_design_references.md`，但不替代协议文档
+- `README.md` 是人类入口，`AGENTS.md` 是 agent 操作规范，`docs/project_status.md` 是当前进度和交接入口
+- `CLAUDE.md` 等工具专属文档只保留工具差异和公共规范链接，不复制完整项目规范
+- 环境协议说明维护在 `docs/specs/env_protocol.md`
+- 相近项目参考和生产化 checklist 维护在 `docs/references/env_design_references.md`，但不替代协议文档
+- 长期决策记录维护在 `docs/decisions/`，改方向前先读相关 decision
 - `src/data/dataset.py` 中的 v1 schema 是当前数据协议的 source of truth
 - `data/verl` 应在实际训练服务器上由 `python3 -m src.data.verl_dataset` 重新生成，不要信任旧 parquet 缓存
 - `data/verl` 当前标准文件是 `codecontests_train.parquet`、`codecontests_valid.parquet`、`codecontests_test.parquet`、`livecodebench_test.parquet`
-- 当前四个标准 Parquet 已经完成一次本地整理，可作为第一版 baseline 输入；详细快照见 `docs/verl_parquet_dataset_analysis.md`
+- 当前四个标准 Parquet 已经完成一次本地整理，可作为第一版 baseline 输入；详细快照见 `docs/specs/verl_parquet_dataset_analysis.md`
 
 ## 当前主链路
 
@@ -86,6 +89,8 @@
 
 当前数据处理目标已经基本完成，下一步优先级是跑出可复现 baseline，而不是继续改数据。建议第一版 baseline 使用 1 epoch，不要沿用旧小数据实验里的 `total_epochs=7`。当前 `train_batch_size=128`、`rollout.n=4` 时，每个 step 是 512 条 rollout；`9698` 条训练数据约等于每 epoch 75 step，1 epoch 的 rollout 数量已经约为旧 374 条训练集跑 7 epoch 的 5.4 倍。
 
+当前 baseline 调试进展、验证记录、blocker 和下一步统一维护在 `docs/project_status.md`。不要把阶段性状态分散写进新的临时入口文档。
+
 prompt 长度方面：
 
 - `max_prompt_length=512` 明显太小。
@@ -103,7 +108,7 @@ prompt 长度方面：
 - 不要把旧的单一执行代码接口当作目标环境
 - 不要再以旧 run 指标和旧 benchmark 目标作为当前项目目标
 
-`archive/legacy_outputs/2026-04-24/` 是旧 MBPP/HumanEval 和旧 GRPO 输出归档，只作历史参考。`outputs/` 是当前新运行的写入位置，不是规范来源。
+`docs/legacy/2026-04-24-legacy-outputs/` 是旧 MBPP/HumanEval 和旧 GRPO 输出归档，只作历史参考。`outputs/` 是当前新运行的写入位置，不是规范来源。
 
 `/Users/yang/code/verl/verl/trainer/main_eval.py` 只是对已有 responses 做离线 reward 打分，不是当前 OJ-like 在线工具评测入口。需要复用 verl 训练时 agent loop 时，优先走 `scripts/evaluate_baseline_with_verl.sh`。
 

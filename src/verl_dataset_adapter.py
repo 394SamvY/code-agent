@@ -8,6 +8,19 @@ dict/list 对象。这个 adapter 在读数据时动态 decode，不改 parquet 
   data.custom_cls.path=src/verl_dataset_adapter.py
   data.custom_cls.name=OJLikeRLHFDataset
 verl 的 get_dataset_class() 会通过 load_extern_object 动态加载本类，替代默认 RLHFDataset。
+
+核心覆盖的方法：
+  1. _decode_row            — 工具方法，把一行的 JSON 字符串 decode 为 Python 对象
+  2. _build_messages        — 覆盖父类，decode 后再构建 chat messages
+  3. maybe_filter_out_long_prompts — 覆盖父类，用真实 token 长度过滤超长 prompt
+  4. __getitem__            — 覆盖父类，decode 后组装 raw_prompt / tools_kwargs 等
+
+最重要的覆盖是 maybe_filter_out_long_prompts，它修复了一个关键 bug：
+  - 父类 RLHFDataset 的过滤直接读 doc[prompt_key]，拿到的是 JSON 字符串
+  - 字符串长度远小于真实 chat template token 数，导致超长 prompt 被低估
+  - 这些未被过滤的 prompt 进入 agent loop batch 后，multi-turn 结束的 prompt_ids 宽度不一致
+  - torch.cat 报 shape mismatch，VAL_BATCH_SIZE > 1 无法跑通
+  - 覆盖后在过滤前先 decode + apply_chat_template，用真实 token 长度判断
 """
 
 from __future__ import annotations
@@ -46,13 +59,18 @@ def _json_load_if_str(value: Any, *, field_name: str) -> Any:
 class OJLikeRLHFDataset(RLHFDataset):
     """继承 verl 的 RLHFDataset，在读 parquet 时将 JSON 字符串字段解码为 Python 对象。
 
-    调用链回顾（详见 verl/utils/dataset/rl_dataset.py 的 get_dataset_class）：
+    调用链（详见 verl/utils/dataset/rl_dataset.py 的 get_dataset_class）：
       1. eval 脚本传 custom_cls.path / custom_cls.name
       2. main_ppo 的 create_rl_dataset → get_dataset_class → load_extern_object
       3. 加载本类，替代默认 RLHFDataset
       4. __init__ → _read_files_and_tokenize → maybe_filter_out_long_prompts
          （本类覆盖该方法，确保过滤阶段按 decode 后的真实 chat messages 计数）
       5. rollout 时 __getitem__ 逐条取 sample，本类 decode 后再组装 raw_prompt / tools_kwargs 等字段
+
+    三个 JSON 字符串字段：
+      - prompt:       chat messages 列表 → 经过 _build_messages 和 chat template 变成 token ids
+      - reward_model: verl 的 reward 配置 → 含 ground_truth（task_id 等）
+      - extra_info:   工具执行所需的元数据 → tools_kwargs / interaction_kwargs / index
     """
 
     # ── 内部工具方法 ──────────────────────────────────────────────
@@ -60,6 +78,7 @@ class OJLikeRLHFDataset(RLHFDataset):
         """把一行的 prompt / reward_model / extra_info 从 JSON 字符串 decode 为 Python 对象。
 
         先 dict() 拷贝再修改，避免污染原始 dataframe 缓存。
+        拷贝是为了不修改 HuggingFace dataset 内部缓存的原始行数据。
         """
         row_dict = dict(row_dict)
         for field_name in ("prompt", "reward_model", "extra_info"):
@@ -77,6 +96,12 @@ class OJLikeRLHFDataset(RLHFDataset):
         调用时机：_read_files_and_tokenize → maybe_filter_out_long_prompts → doc2len
         在这里 decode 确保 token 长度计算时拿到的是真实的 list[dict] 而不是 JSON 字符串，
         否则遍历字符串会得到每个字符而不是每轮对话。
+
+        举例：
+          未 decode: doc[prompt_key] = '[{"role":"system","content":"..."}]'
+                     → 遍历得到 '[', '{', '"', 'r', ... 每个字符
+          已 decode: doc[prompt_key] = [{"role":"system","content":"..."}]
+                     → 遍历得到每轮对话 dict，父类按 role/content 正常处理
         """
         example = self._decode_row(example)
         return super()._build_messages(example)
@@ -88,14 +113,44 @@ class OJLikeRLHFDataset(RLHFDataset):
         ``doc[prompt_key]`` directly instead of calling ``_build_messages``.
         Our parquet stores ``prompt`` as a JSON string, so the parent method
         under-counts and leaves overlong prompts in validation batches.
+
+        这是本 adapter 最关键的覆盖方法。父类用文本长度估算 token 数，
+        在 JSON-string schema 下严重低估，导致超长 prompt 未被过滤。
+        覆盖后用真实的 tokenizer.apply_chat_template 计算 token 长度，
+        确保后续 agent loop 内 batch 中所有 prompt_ids 都 ≤ max_prompt_length。
+
+        过滤流程：
+          1. dataset.filter(lambda doc: doc2len(doc) <= max_prompt_length)
+          2. doc2len: decode → tokenizer.apply_chat_template(tools=tool_schemas) → normalize_token_ids
+          3. 超过上限的行被移除，dataset 变小
+          4. 实际 batch 内的所有 prompt 长度一致（pad 到 max_prompt_length）
+
+        如果不覆盖这个方法：
+          - 父类默认 doc2len 取 doc[prompt_key] 长度的字符数
+          - JSON 字符串 500 字符 ≈ 实际可能 2000+ tokens
+          - filter 判断为"未超长"，但真实 tokens 远超 max_prompt_length
+          - tokenizer.pad 不会截断已经超过 max_length 的序列
+          - batch 内 prompt_ids 宽度不统一（2048 vs 3475 vs ...）
+          - torch.cat 报 shape mismatch，VAL_BATCH_SIZE > 1 无法跑通
         """
-        if self.processor is not None or not self.filter_overlong_prompts:
+        if self.processor is not None or self.filter_overlong_prompts:
             return super().maybe_filter_out_long_prompts(dataframe)
 
         tokenizer = self.tokenizer
         prompt_key = self.prompt_key
 
         def doc2len(doc) -> int:
+            """计算单条样本经过 chat template 渲染后的真实 token 数量。
+
+            步骤：
+              1. decode JSON 字符串 → Python 对象
+              2. apply_chat_template(tools=tool_schemas, add_generation_prompt=True)
+                 → 调用 Qwen3-8B tokenizer 的 chat template，注入 tool schema
+              3. normalize_token_ids → 返回 token 列表长度
+
+            如果计算失败（如字段格式异常），返回 max_prompt_length + 1，
+            让 filter 将其排除，宁可少一条也不让脏数据进入 batch。
+            """
             try:
                 doc = self._decode_row(doc)
                 apply_kwargs = dict(**self.apply_chat_template_kwargs)
@@ -129,12 +184,31 @@ class OJLikeRLHFDataset(RLHFDataset):
     def __getitem__(self, item):
         """rollout / validation 时 verl 逐条取 sample 的入口。
 
+        AgentLoopWorker 每处理一条样本就会调用一次，所以这里是"per-sample"的调用。
+
         流程：
         1. 从 dataframe 取该行，调用 _decode_row 解码 JSON 字符串字段
-        2. 调 _build_messages 构建 raw_prompt（multi-turn chat messages 列表）
-        3. 加 dummy_tensor 保持 DataProto.batch 非空（verl 的硬性要求）
+        2. 调 _build_messages 构建 raw_prompt（multi-turn chat messages 列表，含 system + user）
+        3. 加 dummy_tensor 保持 DataProto.batch 非空（verl 的硬性要求，内部依赖 batch 至少有一个 tensor）
         4. 从 extra_info 中提取 tools_kwargs / interaction_kwargs / index，
            这些是 verl agent loop 执行 tool call 和 reward 计算所必需的元数据
+
+        关键字段映射（parquet → verl agent loop）：
+          - raw_prompt:         → ToolAgentLoop 的初始 chat messages
+          - index:              → 样本序号，用于 logging 和追踪
+          - tools_kwargs:       → 传给 verl BaseTool.create()，动态构建每题的测试环境
+          - interaction_kwargs: → 多轮交互控制参数（max_turns 等）
+          - need_tools_kwargs:  → 是否需要 tools_kwargs（默认 True）
+
+        tools_kwargs 的结构（来自 parquet extra_info.tools_kwargs）：
+          {
+            "run_public_tests": {
+              "create_kwargs": {"public_tests": [...], "time_limit_seconds": 5, ...}
+            },
+            "submit_solution": {
+              "create_kwargs": {"private_tests": [...], "time_limit_seconds": 5, ...}
+            }
+          }
         """
         row_dict: dict = self._decode_row(self.dataframe[item])
         row_dict["raw_prompt"] = self._build_messages(row_dict)
@@ -155,10 +229,12 @@ class OJLikeRLHFDataset(RLHFDataset):
             row_dict["extra_info"] = {}
 
         # 从 extra_info 中提取 agent loop 需要的字段：
-        #   index:             样本序号
+        #   index:             样本序号，用于 logging 和追踪
         #   tools_kwargs:      每个题目配套的工具参数（public/private tests、time limit 等）
         #                      传给 verl BaseTool 的 create() 方法，动态构建测试环境
+        #                      结构：{tool_name: {create_kwargs: {...}}}
         #   interaction_kwargs:多轮交互控制参数（如 max_turns）
+        #   need_tools_kwargs: 是否需要 tools_kwargs（默认 True，仅代码/数学类任务需要）
         index = row_dict.get("extra_info", {}).get("index", 0)
         tools_kwargs = row_dict.get("extra_info", {}).get("tools_kwargs", {})
         interaction_kwargs = row_dict.get("extra_info", {}).get(
