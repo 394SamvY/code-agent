@@ -23,6 +23,21 @@
 
 如果需要历史背景，可以查看 `obsidian/11-code-agent/`，但那个目录只是研究记录，不是当前仓库规范的来源。
 
+## 仓库随附 Codex skills
+
+仓库内保留两个可版本化的 Codex user skill，供远程环境没有本地 skill 时使用：
+
+- `skills/debug-cleanup/SKILL.md`
+- `skills/project-context-sync/SKILL.md`
+
+如果当前 Codex 运行环境不会自动发现仓库内 `skills/`，可以把它们复制到该机器的 `~/.codex/skills/` 后再使用：
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R skills/debug-cleanup ~/.codex/skills/
+cp -R skills/project-context-sync ~/.codex/skills/
+```
+
 ## 当前硬约束
 
 - `RL-only`：不要把 SFT 重新引回主训练路径
