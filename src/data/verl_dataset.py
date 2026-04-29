@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.data.dataset import CodeProblem, load_codecontests, load_livecodebench
-from src.env.tools import serialize_oj_tests
+from src.env.tools import DEFAULT_MAX_PUBLIC_TEST_CALLS, serialize_oj_tests
 from src.prompts import build_agentic_messages
 
 
@@ -21,16 +21,25 @@ def _dataset_local_path(data_dir: str | None, name: str) -> str | None:
     return str(candidate) if candidate.exists() else None
 
 
-def _create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str, Any]:
+def _create_kwargs(
+    problem: CodeProblem,
+    max_submissions: int,
+    max_public_test_calls: int = DEFAULT_MAX_PUBLIC_TEST_CALLS,
+) -> dict[str, Any]:
     return {
         "public_tests": serialize_oj_tests(problem.public_tests),
         "private_tests": serialize_oj_tests(problem.private_tests),
         "time_limit_seconds": problem.time_limit_seconds,
         "max_submissions": max_submissions,
+        "max_public_test_calls": max_public_test_calls,
     }
 
 
-def _tool_create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str, dict[str, Any]]:
+def _tool_create_kwargs(
+    problem: CodeProblem,
+    max_submissions: int,
+    max_public_test_calls: int = DEFAULT_MAX_PUBLIC_TEST_CALLS,
+) -> dict[str, dict[str, Any]]:
     common = {
         "time_limit_seconds": problem.time_limit_seconds,
         "max_submissions": max_submissions,
@@ -39,6 +48,7 @@ def _tool_create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str,
         "run_public_tests": {
             **common,
             "public_tests": serialize_oj_tests(problem.public_tests),
+            "max_public_test_calls": max_public_test_calls,
         },
         "submit_solution": {
             **common,
@@ -50,9 +60,14 @@ def _tool_create_kwargs(problem: CodeProblem, max_submissions: int) -> dict[str,
 def problem_to_verl_record(
     problem: CodeProblem,
     max_submissions: int = 5,
+    max_public_test_calls: int = DEFAULT_MAX_PUBLIC_TEST_CALLS,
 ) -> dict[str, Any]:
     """Convert a CodeProblem into a verl multi-turn training record."""
-    tool_create_kwargs = _tool_create_kwargs(problem, max_submissions=max_submissions)
+    tool_create_kwargs = _tool_create_kwargs(
+        problem,
+        max_submissions=max_submissions,
+        max_public_test_calls=max_public_test_calls,
+    )
     # `extra_info` 不是给模型看的 prompt；verl 会把它传给 tool layer，
     # 让同一套工具在不同题目上使用不同的测试、时间限制和提交次数限制。
     extra_info = {
@@ -95,6 +110,7 @@ def problems_to_verl_parquet(
     problems: list[CodeProblem],
     output_path: str | Path,
     max_submissions: int = 5,
+    max_public_test_calls: int = DEFAULT_MAX_PUBLIC_TEST_CALLS,
     batch_size: int = 128,
 ) -> Path:
     """Write CodeProblem records to a verl-compatible parquet file."""
@@ -114,7 +130,11 @@ def problems_to_verl_parquet(
         for start in range(0, len(problems), batch_size):
             batch = [
                 _serialize_record_for_parquet(
-                    problem_to_verl_record(problem, max_submissions=max_submissions)
+                    problem_to_verl_record(
+                        problem,
+                        max_submissions=max_submissions,
+                        max_public_test_calls=max_public_test_calls,
+                    )
                 )
                 for problem in problems[start : start + batch_size]
             ]
@@ -139,6 +159,7 @@ def prepare_verl_datasets(
     max_codecontests_test_samples: int | None = None,
     max_livecodebench_test_samples: int | None = None,
     max_submissions: int = 5,
+    max_public_test_calls: int = DEFAULT_MAX_PUBLIC_TEST_CALLS,
     livecodebench_version_tag: str = "release_v6",
 ) -> dict[str, Path]:
     """Prepare explicit CodeContests and LiveCodeBench parquet files."""
@@ -173,21 +194,25 @@ def prepare_verl_datasets(
             codecontests_train,
             output / "codecontests_train.parquet",
             max_submissions=max_submissions,
+            max_public_test_calls=max_public_test_calls,
         ),
         "codecontests_valid": problems_to_verl_parquet(
             codecontests_valid,
             output / "codecontests_valid.parquet",
             max_submissions=max_submissions,
+            max_public_test_calls=max_public_test_calls,
         ),
         "codecontests_test": problems_to_verl_parquet(
             codecontests_test,
             output / "codecontests_test.parquet",
             max_submissions=max_submissions,
+            max_public_test_calls=max_public_test_calls,
         ),
         "livecodebench_test": problems_to_verl_parquet(
             livecodebench_test,
             output / "livecodebench_test.parquet",
             max_submissions=max_submissions,
+            max_public_test_calls=max_public_test_calls,
         ),
     }
     return paths
@@ -202,6 +227,11 @@ def main() -> None:
     parser.add_argument("--max_codecontests_test_samples", type=int, default=None)
     parser.add_argument("--max_livecodebench_test_samples", type=int, default=None)
     parser.add_argument("--max_submissions", type=int, default=5)
+    parser.add_argument(
+        "--max_public_test_calls",
+        type=int,
+        default=DEFAULT_MAX_PUBLIC_TEST_CALLS,
+    )
     parser.add_argument("--livecodebench_version_tag", default="release_v6")
     args = parser.parse_args()
 
@@ -213,6 +243,7 @@ def main() -> None:
         max_codecontests_test_samples=args.max_codecontests_test_samples,
         max_livecodebench_test_samples=args.max_livecodebench_test_samples,
         max_submissions=args.max_submissions,
+        max_public_test_calls=args.max_public_test_calls,
         livecodebench_version_tag=args.livecodebench_version_tag,
     )
     for split, path in paths.items():

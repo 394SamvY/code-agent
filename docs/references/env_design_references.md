@@ -47,7 +47,7 @@ Submit-dominant reward：
 
 - public tests 返回 `0.0`
 - accepted submit 返回主 reward
-- failed submit 可使用弱 private pass-rate shaping
+- failed submit 可使用弱 passed/total shaping；当前 judge 首错即停，因此这是首个失败前的前缀比例
 
 Dataset separation：
 

@@ -52,7 +52,7 @@ cp -R skills/project-context-sync ~/.codex/skills/
 - 环境语义只限制 `max_submissions=5`
 - `max_tool_calls` 只是工程 hard cap，用来防止 rollout 死循环，不是 OJ 规则
 - `run_public_tests` 不给 reward，只返回 observation
-- `submit_solution` 是主 reward 来源：accepted 为 1.0，failed submit 最多按 private pass rate 给弱 shaped reward
+- `submit_solution` 是主 reward 来源：accepted 为 1.0，failed submit 最多按首错前 passed/total 前缀比例给弱 shaped reward
 - `README.md` 是人类入口，`AGENTS.md` 是 agent 操作规范，`docs/project_status.md` 是当前进度和交接入口
 - `CLAUDE.md` 等工具专属文档只保留工具差异和公共规范链接，不复制完整项目规范
 - 环境协议说明维护在 `docs/specs/env_protocol.md`

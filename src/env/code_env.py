@@ -20,7 +20,6 @@ from .tools import (
     TOOL_EXECUTORS,
     VERDICT_ACCEPTED,
     format_judge_observation,
-    run_oj_judge,
 )
 
 
@@ -37,12 +36,14 @@ class CodeEnvironment:
         problem: CodeProblem,
         timeout: int | float | None = None,
         max_submissions: int = 5,
+        max_public_test_calls: int = 15,
     ):
         self.problem = problem
         # timeout 优先级：显式传入 > 题目 time_limit_seconds > 默认 5 秒。
         # 这里的 timeout 会传给每个 test case 的子进程执行。
         self.timeout = timeout if timeout is not None else problem.time_limit_seconds or 5
         self.max_submissions = max_submissions
+        self.max_public_test_calls = max_public_test_calls
 
         # `_state` 是工具执行器的共享状态。`src.env.tools.TOOL_EXECUTORS` 接收的就是
         # 这个 dict，因此本地环境、eval 和 verl tool adapter 能复用同一套工具语义。
@@ -58,6 +59,8 @@ class CodeEnvironment:
             "private_tests": problem.private_tests,
             "timeout": self.timeout,
             "max_submissions": max_submissions,
+            "max_public_test_calls": max_public_test_calls,
+            "public_test_call_count": 0,
             "submission_count": 0,
             "tool_history": [],
             "public_results_history": [],
@@ -68,19 +71,14 @@ class CodeEnvironment:
     def run_public_tests(self, code: str) -> dict[str, Any]:
         """Run code against public tests and return the structured result.
 
-        这是给本地 Python 调用方用的便捷接口，直接返回结构化 dict。
-        如果需要模拟真实 agent tool call，应使用 `execute_tool("run_public_tests", code=...)`，
-        那个接口返回 observation text。
+        这是给本地 Python 调用方用的便捷接口，内部仍走真实 tool executor，
+        因此会遵守 `max_public_test_calls`。如果需要 observation text，应直接使用
+        `execute_tool("run_public_tests", code=...)`。
         """
-        self._state["current_code"] = code
-        result = run_oj_judge(
-            code=code,
-            tests=self.problem.public_tests,
-            action="run_public_tests",
-            timeout=self.timeout,
-        )
-        self._state["public_results_history"].append(result)
-        self._state["last_result"] = result
+        observation = self.execute_tool("run_public_tests", code=code)
+        result = self._state["last_result"]
+        if result is None:
+            raise RuntimeError(f"run_public_tests failed without result: {observation}")
         return result
 
     def submit_solution(self, code: str) -> dict[str, Any]:
@@ -174,6 +172,7 @@ class CodeEnvironment:
         题目、tests、timeout、max_submissions 不变，只清空当前代码、提交计数和历史。
         """
         self._state["current_code"] = ""
+        self._state["public_test_call_count"] = 0
         self._state["submission_count"] = 0
         self._state["tool_history"] = []
         self._state["public_results_history"] = []

@@ -25,6 +25,8 @@ from typing import Any
 
 import numpy as np
 
+from src.trajectory_parser import parse_tool_output
+
 
 _PATCHED = False
 
@@ -102,6 +104,7 @@ def _append_partial_generations(
     base_data = {
         "input": inputs,
         "output": outputs,
+        "structured_output": [parse_tool_output(output) for output in outputs],
         "gts": gts,
         "score": scores,
         "step": [trainer.global_steps] * n,
@@ -118,6 +121,41 @@ def _append_partial_generations(
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())
+
+
+def _dump_generations_with_structure(
+    trainer: Any,
+    *,
+    inputs: list[str],
+    outputs: list[str],
+    gts: list[Any],
+    scores: list[float],
+    reward_extra_infos_dict: dict[str, list[Any]],
+    dump_path: str,
+) -> None:
+    """Write final validation generations with parsed tool-event structure."""
+    os.makedirs(dump_path, exist_ok=True)
+    filename = os.path.join(dump_path, f"{trainer.global_steps}.jsonl")
+    n = len(inputs)
+    base_data = {
+        "input": inputs,
+        "output": outputs,
+        "structured_output": [parse_tool_output(output) for output in outputs],
+        "gts": gts,
+        "score": scores,
+        "step": [trainer.global_steps] * n,
+    }
+
+    for key, values in reward_extra_infos_dict.items():
+        if len(values) == n:
+            base_data[key] = values
+
+    with open(filename, "w", encoding="utf-8") as f:
+        for i in range(n):
+            entry = {key: values[i] for key, values in base_data.items()}
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    print(f"Dumped structured generations to {filename}")
 
 
 def _install_validation_partial_dump_patch() -> None:
@@ -283,9 +321,10 @@ def _install_validation_partial_dump_patch() -> None:
             scores=sample_scores,
         )
 
-        # 仍然调用 verl 原生的 _dump_generations，写出完整的 0.jsonl
+        # 写出完整的 0.jsonl，并附带 parsed structured_output 方便人工查看。
         if val_data_dir:
-            self._dump_generations(
+            _dump_generations_with_structure(
+                self,
                 inputs=sample_inputs,
                 outputs=sample_outputs,
                 gts=sample_gts,

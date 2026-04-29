@@ -43,15 +43,21 @@
 
 ## 当前工作状态
 
-截至本次同步，工作区存在 3 个未提交代码改动：
+截至本次同步，工作区存在本轮 trajectory 控制相关未提交改动：
 
 | 文件 | 当前作用 |
 | --- | --- |
-| `scripts/verl_main_wrapper.py` | 记录 driver 进程与 Ray CPU TaskRunner actor 的 patch 安装链路。 |
-| `src/verl_dataset_adapter.py` | 记录 JSON-string Parquet schema 到 verl `RLHFDataset` 的 decode / prompt length filter 适配逻辑。 |
-| `src/verl_runtime_patch.py` | 记录 numpy JSON 序列化 patch 与 validation partial dump patch 的安装点和语义。 |
+| `src/env/tools.py` | judge 遇到首个失败 case 即停；public tests 增加 15 次调用上限；observation 只保留首个失败并裁剪。 |
+| `src/env/code_env.py` | 本地环境同步 `max_public_test_calls` 状态，便捷接口复用 tool executor。 |
+| `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略。 |
+| `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 解析为 `structured_output.events`，支持在线落盘和离线补结构化 jsonl。 |
+| `src/verl_runtime_patch.py` | partial / final validation generation dump 增加 `structured_output` 字段。 |
+| `src/data/verl_dataset.py` | 新导出的 parquet tool create kwargs 带 `max_public_test_calls`；旧 parquet 仍走默认值。 |
+| `scripts/evaluate_baseline_with_verl.sh` | 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`。 |
+| `tests/test_verl_tools.py` / `tests/test_e2e_protocol.py` | 覆盖首错即停、public cap 不消耗 submit 次数、create kwargs 导出。 |
+| `AGENTS.md` / `README.md` / `docs/*` | 同步当前协议、reward 口径和交接状态。 |
 
-这些改动主要是围绕 2026-04-28 的 baseline eval 调试结论补充代码内说明，并涉及 verl runtime/dataset 适配路径。合入前仍应做一次 focused diff review 和 smoke verification。
+合入前仍应做一次 focused diff review；本地 `py_compile`、`tests/test_verl_tools.py`、`tests/test_e2e_protocol.py` 已通过，A800 focused smoke 尚未重跑。
 
 ## 最近重要结论
 
@@ -88,19 +94,11 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 
 **需要工程解决（当前优先级）**
 
-1. (P1) **公开测试无限循环**：45/56 条样本 score=0，大部分从未调用 `submit_solution`。典型样本 23 次 `run_public_tests`、0 次 `submit_solution`，公测一直失败但不提交。方案：`max_public_test_calls` 上限（默认 15），达到后返回短提示引导提交。加在 `RunPublicTestsTool` 的 instance state 里。
+1. (P2) **重复代码消耗**：模型反复用相同代码调 `run_public_tests`，每次重新跑 subprocess judge 和生成 observation。方案：相同 `tool_name + code_hash` 结果缓存，连续相同代码返回短 observation。当前先不做。
 
-2. (P2) **重复代码消耗**：模型反复用相同代码调 `run_public_tests`，每次重新跑 subprocess judge 和生成 observation。方案：相同 `tool_name + code_hash` 结果缓存，连续相同代码返回短 observation。
+2. (P5) **输出格式不直观**：已改为在 `partial_0.jsonl` 和 `0.jsonl` 中附加 `structured_output`，其 `events` 会按顺序保存 `assistant_text` / `tool_call` / `tool_response`。旧 generation jsonl 可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补结构化视图。
 
-3. (P3) **Observation 累积过长**：平均 20,760 字符，`run_public_tests` 展开所有失败 public case（含 full input/expected/stdout/stderr），随多轮不断累积进上下文。方案：压缩 observation（只展示首个失败 case 或设总字符预算）。
-
-4. (P4) **`max_response_length=8192` 偏大**：给模型过多空间浪费，也占 KV cache。方案：trajectory 可控后降到 4096 或 2048 say smoke，相应降低 `MAX_MODEL_LEN` 释放 KV cache。
-
-**即将处理（P5/P6，已讨论待排期）**
-
-7. (P5) **输出格式不直观**：`partial_0.jsonl` 把整条 trajectory 的 prompt 和 response 各存为一个字符串，多轮交互全糊在一起。方案：离线解析 output 文本，用正则拆分 `<tool_call>` / `<tool_response>` 边界，还原成结构化 turns（不做在线改动，只加事后分析脚本或 partial dump 时做）。
-
-8. (P6) **评测未开启 thinking**：`enable_thinking=false`（eval 脚本第 241 行 + YAML 训练配置）。base model 缺乏调试能力，开 thinking 可能帮助它在 tool-based 交互中做出更好的修复决策。方案：评测先开 `enable_thinking=true`，训练保持关闭，等基线结果出来后再实验。
+3. (P4) **eval budget 暂不调整**：当前 baseline eval 默认保持输入限制 `MAX_PROMPT_LENGTH=4096`，整条 trajectory 输出限制 `MAX_RESPONSE_LENGTH=8192`。
 
 **RL 训练解决（当前不处理）**
 
@@ -110,7 +108,11 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 
 **已解决**
 
-7. **500 条没跑完**：可能是手动中断，不追查。
+1. **500 条没跑完**：可能是手动中断，不追查。
+2. (P1) **公开测试无限循环保护**：`run_public_tests` 增加 `max_public_test_calls=15` 默认上限，达到后返回短提示引导调用 `submit_solution`，不消耗正式提交次数。
+3. (P3) **Observation 累积过长**：public/private judge 均改为遇到首个失败 case 即停止，observation 只展示首个失败 case，并保留文本裁剪。
+4. (P6) **评测开启 thinking**：`scripts/evaluate_baseline_with_verl.sh` 默认 `enable_thinking=true`。
+5. (P5) **多轮输出结构化保存**：新增 `structured_output.events` 在线落盘和离线解析脚本。
 
 ## 验证状态
 
@@ -119,6 +121,7 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 - 1GPU partial dump smoke 通过，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条。
 - 2GPU 统一调度 smoke 通过，两个 SGLang server 分别绑定 GPU0 和 GPU1，`partial_0.jsonl` 和 `0.jsonl` 均写出 4 条。
 - 清理 sharded fallback 和 `sitecustomize.py` 后，2GPU smoke 再次通过。
+- 2026-04-29 1GPU structured output smoke 通过：`smoke_structured_output_20260429_185821`，`VAL_MAX_SAMPLES=2`，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条，且均包含 `structured_output.events`。
 
 2026-04-29 对 `codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713` 做了离线输出分析，但没有重新运行远端 GPU baseline。任何“当前代码已完全通过正式 baseline”或“效率问题已解决”的表述都应等下一次真实 A800 smoke / full eval 后再写入。
 
@@ -126,29 +129,23 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 
 实现顺序按优先级排列：
 
-### Phase 1：trajectory 可控（P1/P2/P3，先讨论后实现）
+### Phase 1：trajectory 可控
 
-1. (P1) `max_public_test_calls` 上限：在 `RunPublicTestsTool` 的 instance state 里加计数器，默认 15。达到后返回短 observation 引导提交，不强制终止 trajectory。配置方式待讨论：写死 / tools_kwargs / 环境变量。
+1. `max_public_test_calls=15`、首错即停、首错 observation 和 eval thinking 已实现；下一步需要 A800 focused smoke 验证真实 trajectory。
+2. (P2) 重复代码短路暂不实现，除非 smoke 仍显示重复 judge 是主要瓶颈。
+3. (P5) 多轮交互输出格式已实现为 `structured_output.events`，后续只需根据人工查看体验微调字段名或展示脚本。
 
-2. (P3) 压缩 `run_public_tests` observation：默认只展示首个失败 case，长 input / expected / stdout / stderr 摘要裁剪。减少上下文污染。
+### Phase 2：budget 暂不动
 
-3. (P2) 重复代码短路：相同 `tool_name + code_hash` 结果缓存；连续相同代码返回短 observation，避免重复 subprocess judge。
-
-4. (P6) 评测开启 thinking：`enable_thinking=false` → `true`（仅评测，训练保持关闭）。
-
-5. (P5) 多轮交互输出格式：离线解析 output 文本，拆成结构化 turns，方便人工查看和调试。
-
-### Phase 2：释放资源（P4）
-
-4. trajectory 可控后，把 `MAX_RESPONSE_LENGTH` 从 8192 降到 4096 或 2048 做 smoke，相应降低 `MAX_MODEL_LEN` 释放 KV cache。
+4. baseline eval 默认保持 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`，暂不下调 response budget。
 
 ### Phase 3：验证与评测
 
-5. Review 当前 3 个未提交代码改动，确认无意外行为。
-6. 本地补单元级验证：
-   - 相同代码重复调用 public tests 不重复跑 judge
-   - 长 observation 被稳定裁剪
-   - hard cap 不破坏 `max_submissions=5` 语义
+5. Review 当前未提交改动，确认无意外行为。
+6. 本地单元级验证已覆盖：
+   - public/private judge 遇到首个失败 case 即停止
+   - `max_public_test_calls` 不破坏 `max_submissions=5` 语义
+   - verl parquet `create_kwargs` 携带 public call cap
 7. 训练服务器 focused smoke（`VAL_MAX_SAMPLES=4`），观察 tool call、submit 率、每题耗时、GPU 利用率。
 8. smoke 通过后调并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32` 等。
 9. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`。

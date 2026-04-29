@@ -47,7 +47,7 @@
 - 环境语义只限制 `max_submissions=5`
 - `max_tool_calls` 只是 rollout 工程保护，用来防止死循环，不是 OJ 规则
 - `run_public_tests` 不给 reward，只返回 observation
-- reward 以正式提交为主：accepted 为主奖励，failed submit 可按 private pass rate 给弱 shaped reward
+- reward 以正式提交为主：accepted 为主奖励，failed submit 可按首错前 passed/total 前缀比例给弱 shaped reward
 - 支持题目级时间限制
 - 内存限制后置，不作为第一阶段重点
 
@@ -166,8 +166,9 @@ CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodeben
 说明：
 
 - `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
-- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`
+- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`，并开启 `enable_thinking=true`
 - validation 会先增量写 `generations/partial_0.jsonl`，整轮结束后再写 verl 原始的 `generations/0.jsonl`
+- generation jsonl 会附带 `structured_output.events`，按顺序保存 `assistant_text` / `tool_call` / `tool_response`；旧文件可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补结构化视图
 - 不再维护“两张卡各自启动一个 verl 进程”的分片 fallback；当前评测应通过单个 verl 进程统一调度多卡
 - `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
 

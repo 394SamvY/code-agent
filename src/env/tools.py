@@ -33,6 +33,10 @@ VERDICT_TIME_LIMIT_EXCEEDED = "time_limit_exceeded"
 VERDICT_SYNTAX_ERROR = "syntax_error"
 VERDICT_NO_TESTS = "no_tests"
 VERDICT_SUBMISSION_LIMIT_EXCEEDED = "submission_limit_exceeded"
+VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED = "public_test_limit_exceeded"
+
+DEFAULT_MAX_PUBLIC_TEST_CALLS = 15
+OBSERVATION_CHAR_LIMIT = 6000
 
 # 环境语义上的终止 verdict。只有 accepted 或提交次数耗尽会结束一轮正式交互。
 TERMINAL_VERDICTS = {
@@ -189,7 +193,8 @@ def run_oj_judge(
     1. 先用 `compile()` 做语法检查
     2. 再逐个测试调用 `sandbox.execute_stdio()`
     3. 根据 timeout / returncode / stdout 比较得到 per-case verdict
-    4. 汇总出 judge-level verdict、passed 数、first_failed 和完整 tests 列表
+    4. 遇到第一条失败 case 立即停止，避免浪费 judge 时间和 observation 空间
+    5. 汇总出 judge-level verdict、passed 数、first_failed 和已执行 tests 列表
 
     注意：它只负责“给定代码 + 给定 tests 怎么判”，不负责 submission limit、
     reward、tool history 或 observation 文本，这些都在更外层处理。
@@ -240,6 +245,9 @@ def run_oj_judge(
             }
         )
 
+        if not is_passed:
+            break
+
     first_failed = next((case for case in case_results if not case["passed"]), None)
     verdict = VERDICT_ACCEPTED if first_failed is None else first_failed["verdict"]
 
@@ -250,6 +258,7 @@ def run_oj_judge(
         "total": len(tests),
         "first_failed": first_failed,
         "tests": case_results,
+        "stopped_early": first_failed is not None,
     }
 
 
@@ -272,6 +281,23 @@ def _format_case(case: dict[str, Any]) -> str:
     )
 
 
+def _public_test_limit_result(env_state: dict[str, Any]) -> dict[str, Any]:
+    """Build a structured result when public-test debugging hits its hard cap."""
+    return {
+        "action": "run_public_tests",
+        "verdict": VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED,
+        "passed": 0,
+        "total": len(env_state.get("public_tests", [])),
+        "first_failed": None,
+        "tests": [],
+        "public_test_call_count": env_state.get("public_test_call_count", 0),
+        "max_public_test_calls": env_state.get(
+            "max_public_test_calls",
+            DEFAULT_MAX_PUBLIC_TEST_CALLS,
+        ),
+    }
+
+
 def format_judge_observation(
     result: dict[str, Any],
     *,
@@ -281,8 +307,8 @@ def format_judge_observation(
 
     结构化 result 是主接口；这个函数只负责把它压成模型可读文本。
 
-    `run_public_tests` 会展开所有失败 public case，便于调试；
-    `submit_solution` 默认只展开第一条失败 private case，避免反馈过量。
+    judge 现在遇到首个失败 case 即停，因此 public/private observation 默认都只会
+    展示第一条失败。`include_all_failures` 保留为兼容参数。
     """
     action = result["action"]
     verdict = result["verdict"]
@@ -296,6 +322,11 @@ def format_judge_observation(
     if verdict == VERDICT_NO_TESTS:
         lines.append("No tests are available for this action.")
         return "\n".join(lines)
+    if verdict == VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED:
+        lines.append(
+            "Public test call limit reached. Stop debugging on public tests and call submit_solution with your best complete program."
+        )
+        return "\n".join(lines)
 
     failures = [case for case in result["tests"] if not case["passed"]]
     if not include_all_failures and result.get("first_failed") is not None:
@@ -304,7 +335,8 @@ def format_judge_observation(
     if failures:
         lines.append("")
         lines.append("\n---\n".join(_format_case(case) for case in failures))
-    return "\n".join(lines)
+    observation = "\n".join(lines)
+    return _clip(observation, OBSERVATION_CHAR_LIMIT)
 
 
 def reward_for_result(result: dict[str, Any]) -> float:
@@ -341,6 +373,18 @@ def tool_run_public_tests(env_state: dict[str, Any], code: str) -> str:
     这个函数既被 `CodeEnvironment.execute_tool()` 调用，也被 verl tool adapter 复用。
     它负责更新共享状态，并返回 observation text 给上层 agent。
     """
+    max_public_test_calls = env_state.get(
+        "max_public_test_calls",
+        DEFAULT_MAX_PUBLIC_TEST_CALLS,
+    )
+    public_test_call_count = env_state.get("public_test_call_count", 0)
+    if public_test_call_count >= max_public_test_calls:
+        result = _public_test_limit_result(env_state)
+        env_state["public_results_history"].append(result)
+        env_state["last_result"] = result
+        return format_judge_observation(result, include_all_failures=False)
+
+    env_state["public_test_call_count"] = public_test_call_count + 1
     env_state["current_code"] = code
     result = run_oj_judge(
         code=code,
@@ -348,9 +392,11 @@ def tool_run_public_tests(env_state: dict[str, Any], code: str) -> str:
         action="run_public_tests",
         timeout=env_state.get("timeout", 5),
     )
+    result["public_test_call_count"] = env_state["public_test_call_count"]
+    result["max_public_test_calls"] = max_public_test_calls
     env_state["public_results_history"].append(result)
     env_state["last_result"] = result
-    return format_judge_observation(result, include_all_failures=True)
+    return format_judge_observation(result, include_all_failures=False)
 
 
 def tool_submit_solution(env_state: dict[str, Any], code: str) -> str:

@@ -238,7 +238,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     data.custom_cls.path=src/verl_dataset_adapter.py \
     data.custom_cls.name=OJLikeRLHFDataset \
     data.return_raw_chat=true \
-    data.apply_chat_template_kwargs.enable_thinking=false \
+    data.apply_chat_template_kwargs.enable_thinking=true \
     actor_rollout_ref.model.path="$MODEL_PATH" \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.fsdp_config.model_dtype="$FSDP_MODEL_DTYPE" \

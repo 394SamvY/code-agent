@@ -17,6 +17,7 @@ from src.env.code_env import CodeEnvironment
 from src.env.tools import (
     VERDICT_ACCEPTED,
     VERDICT_NO_TESTS,
+    VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED,
     VERDICT_RUNTIME_ERROR,
     VERDICT_SUBMISSION_LIMIT_EXCEEDED,
     VERDICT_SYNTAX_ERROR,
@@ -70,6 +71,30 @@ def test_wrong_answer_includes_case_detail():
     assert "Stdout:\n1" in observation
 
     print("[PASS] test_wrong_answer_includes_case_detail")
+
+
+def test_public_tests_stop_at_first_failed_case():
+    env = CodeEnvironment(
+        _problem(
+            public_tests=[
+                OJTestCase("1\n", "2\n"),
+                OJTestCase("2\n", "3\n"),
+            ]
+        )
+    )
+
+    observation = env.execute_tool("run_public_tests", code="print(0)")
+    result = env.public_results_history[-1]
+
+    assert result["verdict"] == VERDICT_WRONG_ANSWER
+    assert result["passed"] == 0
+    assert result["total"] == 2
+    assert len(result["tests"]) == 1
+    assert result["stopped_early"] is True
+    assert "Input:\n1" in observation
+    assert "Input:\n2" not in observation
+
+    print("[PASS] test_public_tests_stop_at_first_failed_case")
 
 
 def test_runtime_error_verdict():
@@ -134,6 +159,23 @@ def test_public_tests_can_run_multiple_times():
     print("[PASS] test_public_tests_can_run_multiple_times")
 
 
+def test_public_test_call_limit_guides_submit_without_consuming_submission():
+    env = CodeEnvironment(_problem(), max_public_test_calls=2)
+
+    env.execute_tool("run_public_tests", code="print(0)")
+    env.execute_tool("run_public_tests", code="print(0)")
+    observation = env.execute_tool("run_public_tests", code="print(0)")
+    result = env.public_results_history[-1]
+
+    assert result["verdict"] == VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED
+    assert result["public_test_call_count"] == 2
+    assert env._state["submission_count"] == 0
+    assert "Public test call limit reached" in observation
+    assert "submit_solution" in observation
+
+    print("[PASS] test_public_test_call_limit_guides_submit_without_consuming_submission")
+
+
 def test_submit_solution_uses_private_tests_and_accepts():
     env = CodeEnvironment(_problem())
     code = "import sys\nx = int(sys.stdin.read())\nprint(x + 1)"
@@ -159,7 +201,7 @@ def test_submit_solution_limit():
     print("[PASS] test_submit_solution_limit")
 
 
-def test_submit_solution_only_observes_first_failed_private_case():
+def test_submit_solution_stops_at_first_failed_private_case():
     env = CodeEnvironment(
         _problem(
             private_tests=[
@@ -173,12 +215,13 @@ def test_submit_solution_only_observes_first_failed_private_case():
     result = env.submission_history[-1]
 
     assert result["verdict"] == VERDICT_WRONG_ANSWER
-    assert len(result["tests"]) == 2
+    assert len(result["tests"]) == 1
+    assert result["stopped_early"] is True
     assert result["first_failed"]["input"] == "10\n"
     assert "Input:\n10" in observation
     assert "Input:\n20" not in observation
 
-    print("[PASS] test_submit_solution_only_observes_first_failed_private_case")
+    print("[PASS] test_submit_solution_stops_at_first_failed_private_case")
 
 
 def test_reward_policy():
@@ -209,14 +252,16 @@ def test_unknown_tool():
 if __name__ == "__main__":
     test_public_tests_accept_correct_stdio_program()
     test_wrong_answer_includes_case_detail()
+    test_public_tests_stop_at_first_failed_case()
     test_runtime_error_verdict()
     test_time_limit_verdict()
     test_syntax_error_verdict()
     test_no_tests_verdict()
     test_public_tests_can_run_multiple_times()
+    test_public_test_call_limit_guides_submit_without_consuming_submission()
     test_submit_solution_uses_private_tests_and_accepts()
     test_submit_solution_limit()
-    test_submit_solution_only_observes_first_failed_private_case()
+    test_submit_solution_stops_at_first_failed_private_case()
     test_reward_policy()
     test_unknown_tool()
     print("\nAll tests passed!")

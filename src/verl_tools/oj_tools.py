@@ -12,6 +12,8 @@ from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionToolSchema, ToolResponse
 
 from src.env.tools import (
+    DEFAULT_MAX_PUBLIC_TEST_CALLS,
+    VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED,
     VERDICT_SUBMISSION_LIMIT_EXCEEDED,
     format_judge_observation,
     parse_oj_tests,
@@ -37,7 +39,14 @@ def _resolve_create_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         extra_info = json.loads(extra_info)
     if isinstance(extra_info, dict):
         create_kwargs.update(extra_info.get("create_kwargs") or {})
-    for key in ("public_tests", "private_tests", "time_limit_seconds", "timeout", "max_submissions"):
+    for key in (
+        "public_tests",
+        "private_tests",
+        "time_limit_seconds",
+        "timeout",
+        "max_submissions",
+        "max_public_test_calls",
+    ):
         if key in kwargs and key not in create_kwargs:
             create_kwargs[key] = kwargs[key]
     return create_kwargs
@@ -61,11 +70,17 @@ class _OJBaseTool(BaseTool):
         create_kwargs = _resolve_create_kwargs(kwargs)
         timeout = create_kwargs.get("time_limit_seconds") or create_kwargs.get("timeout") or 5
         max_submissions = create_kwargs.get("max_submissions", 5)
+        max_public_test_calls = create_kwargs.get(
+            "max_public_test_calls",
+            DEFAULT_MAX_PUBLIC_TEST_CALLS,
+        )
         self._instances[instance_id] = {
             "public_tests": _load_tests(create_kwargs.get("public_tests", [])),
             "private_tests": _load_tests(create_kwargs.get("private_tests", [])),
             "timeout": float(timeout),
             "max_submissions": int(max_submissions),
+            "max_public_test_calls": int(max_public_test_calls),
+            "public_test_call_count": 0,
             "submission_count": 0,
             "results": [],
         }
@@ -113,7 +128,26 @@ class _OJBaseTool(BaseTool):
 class RunPublicTestsTool(_OJBaseTool):
     action_name = "run_public_tests"
     tests_key = "public_tests"
-    include_all_failures = True
+    include_all_failures = False
+
+    def _run(self, inst: dict[str, Any], code: str) -> dict[str, Any]:
+        if inst["public_test_call_count"] >= inst["max_public_test_calls"]:
+            return {
+                "action": self.action_name,
+                "verdict": VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED,
+                "passed": 0,
+                "total": len(inst[self.tests_key]),
+                "first_failed": None,
+                "tests": [],
+                "public_test_call_count": inst["public_test_call_count"],
+                "max_public_test_calls": inst["max_public_test_calls"],
+            }
+
+        inst["public_test_call_count"] += 1
+        result = super()._run(inst, code)
+        result["public_test_call_count"] = inst["public_test_call_count"]
+        result["max_public_test_calls"] = inst["max_public_test_calls"]
+        return result
 
 
 class SubmitSolutionTool(_OJBaseTool):

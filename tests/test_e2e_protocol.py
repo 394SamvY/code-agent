@@ -42,6 +42,7 @@ def test_problem_to_verl_record_contains_create_kwargs():
     assert record["data_source"] == "codecontests"
     assert record["ability"] == "code"
     assert public_create_kwargs["max_submissions"] == 5
+    assert public_create_kwargs["max_public_test_calls"] == 15
     assert public_create_kwargs["time_limit_seconds"] == 2.0
     assert public_create_kwargs["public_tests"] == [{"input": "1\n", "output": "2\n"}]
     assert "private_tests" not in public_create_kwargs
@@ -66,8 +67,10 @@ def test_prepare_verl_datasets_writes_explicit_source_split_files():
         livecodebench_calls.append(kwargs)
         return [_problem()]
 
-    def _fake_writer(problems, output_path, max_submissions=5):
-        written_files.append((Path(output_path).name, max_submissions, len(problems)))
+    def _fake_writer(problems, output_path, max_submissions=5, max_public_test_calls=15):
+        written_files.append(
+            (Path(output_path).name, max_submissions, max_public_test_calls, len(problems))
+        )
         return Path(output_path)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -93,13 +96,14 @@ def test_prepare_verl_datasets_writes_explicit_source_split_files():
         "codecontests_test",
         "livecodebench_test",
     }
-    assert [name for name, _, _ in written_files] == [
+    assert [name for name, _, _, _ in written_files] == [
         "codecontests_train.parquet",
         "codecontests_valid.parquet",
         "codecontests_test.parquet",
         "livecodebench_test.parquet",
     ]
-    assert all(max_submissions == 7 for _, max_submissions, _ in written_files)
+    assert all(max_submissions == 7 for _, max_submissions, _, _ in written_files)
+    assert all(max_public_test_calls == 15 for _, _, max_public_test_calls, _ in written_files)
 
     print("[PASS] test_prepare_verl_datasets_writes_explicit_source_split_files")
 

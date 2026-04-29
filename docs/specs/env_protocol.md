@@ -30,9 +30,11 @@ v1 固定假设：
 
 - 不消耗 submission attempt。
 - 可以重复调用。
+- 默认最多调用 `max_public_test_calls=15` 次；达到上限后返回短提示，引导调用 `submit_solution`，但不终止 episode。
 - 不终止 episode。
 - 不给 reward。
-- 返回详细 public case 反馈，包括 failed input、expected output、stdout、stderr 和 verdict。
+- judge 遇到第一条失败 public case 即停止。
+- 返回第一条 failed public case 的反馈，包括 input、expected output、stdout、stderr 和 verdict。
 
 ### `submit_solution(code)`
 
@@ -47,6 +49,7 @@ v1 固定假设：
 - 默认限制是 `max_submissions=5`。
 - accepted 时终止。
 - submission attempts 用尽时终止。
+- judge 遇到第一条失败 private case 即停止。
 - v1 中失败时返回第一条 failed private case 的详细信息。
 
 当前 training/eval feedback policy 有意暴露第一条 failed private case，用来支持 repair learning。
@@ -63,6 +66,7 @@ v1 固定假设：
 - `syntax_error`
 - `no_tests`
 - `submission_limit_exceeded`
+- `public_test_limit_exceeded`
 
 未来可能加入、但 v1 不实现的 verdict：
 
@@ -92,7 +96,8 @@ v1 固定假设：
 - `passed`
 - `total`
 - `first_failed`
-- `tests`
+- `tests`：已经实际执行的 case results；遇到失败会提前停止，因此失败时不是完整测试列表。
+- `stopped_early`
 
 结构化结果是 logging、metrics 和 reward 的主接口。Observation text 只是给模型看的展示层。
 
@@ -112,7 +117,7 @@ Reward 以 submit 为主：
 
 - `run_public_tests`: `0.0`
 - `submit_solution` accepted: `1.0`
-- failed `submit_solution`: 根据 private pass rate 给弱 shaped reward，当前由实现策略设置上限
+- failed `submit_solution`: judge 首错即停后，根据首个失败前的 passed/total 前缀比例给弱 shaped reward，当前由实现策略设置上限
 
 这个设计是为了避免模型学会为了 reward 反复调用 public tests。Public tests 是诊断工具，不是优化目标。
 
@@ -126,7 +131,8 @@ Reward 以 submit 为主：
 工程层 rollout 保护：
 
 - `max_tool_calls` 用于防止 infinite loops。
-- 它不是 OJ rule，不应被当作任务语义。
+- `max_public_test_calls` 用于防止模型无限调 public tests；默认 15，只影响 public debug action，不消耗 submission attempt，也不是 accepted/submission-limit 终止条件。
+- 这些都不是 OJ rule，不应被当作任务语义。
 
 如果 rollout 结束时没有任何 valid submission，则该 episode 视为失败。
 

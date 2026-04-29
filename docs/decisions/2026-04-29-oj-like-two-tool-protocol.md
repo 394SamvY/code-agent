@@ -34,7 +34,7 @@
 
 - data、prompt、tool adapter、reward 和 eval 都应围绕 `run_public_tests` / `submit_solution` 维护。
 - 新增数据集时必须映射到 `CodeProblem`、`OJTestCase`、public/private tests 和完整 stdin/stdout 程序。
-- reward 以 submit 为主：accepted 为 1.0，failed submit 最多按 private pass rate 给弱 shaped reward。
+- reward 以 submit 为主：accepted 为 1.0，failed submit 最多给弱 shaped reward；当前 judge 首错即停，因此按首个失败前的 passed/total 前缀比例计算。
 - 修改协议时，先更新 `docs/specs/env_protocol.md` 和实现，再同步相关 tests。
 
 ## 相关文档
