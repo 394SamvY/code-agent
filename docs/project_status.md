@@ -50,7 +50,7 @@
 | `src/env/tools.py` | judge 遇到首个失败 case 即停；public tests 增加 15 次调用上限；observation 只保留首个失败并裁剪。 |
 | `src/env/code_env.py` | 本地环境同步 `max_public_test_calls` 状态，便捷接口复用 tool executor。 |
 | `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略。 |
-| `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 解析为 `structured_output.events`，支持在线落盘和离线补结构化 jsonl。 |
+| `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 解析为 `structured_output.events`（当前自定义格式），支持在线落盘和离线补结构化 jsonl。待改为标准 HuggingFace `messages` 格式。 |
 | `src/verl_runtime_patch.py` | partial / final validation generation dump 增加 `structured_output` 字段。 |
 | `src/data/verl_dataset.py` | 新导出的 parquet tool create kwargs 带 `max_public_test_calls`；旧 parquet 仍走默认值。 |
 | `scripts/evaluate_baseline_with_verl.sh` | 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`。 |
@@ -114,6 +114,52 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 4. (P6) **评测开启 thinking**：`scripts/evaluate_baseline_with_verl.sh` 默认 `enable_thinking=true`。
 5. (P5) **多轮输出结构化保存**：新增 `structured_output.events` 在线落盘和离线解析脚本。
 
+### 2026-04-29 thinking eval smoke 分析
+
+最新一次用户关注的输出目录：
+
+```text
+outputs/verl_baseline_eval/smoke_structured_2gpu_
+```
+
+该 run 使用 2xA800，配置中 `enable_thinking=true`、`VAL_BATCH_SIZE=8`、`VAL_MAX_SAMPLES=-1`，因此实际开始跑完整 `codecontests_test`，不是 4 条小 smoke。目录里只有 `generations/partial_0.jsonl` 和 `verl_eval.log`，没有最终 `generations/0.jsonl`。`partial_0.jsonl` 共 264 条，对应 33 个完整 validation batch。
+
+关键数据画像：
+
+| 指标 | 数值 |
+|---|---:|
+| 已完成样本 | 264 |
+| score = 1.0 (Accepted) | 53 |
+| failed submit (0 < score < 1) | 6 |
+| score = 0 | 205 |
+| 平均 score | 0.201 |
+| num_tool_calls = 0 | 198 |
+| `<think>` 未闭合且无 tool call | 195 |
+| 闭合 `</think>` 且出现 tool tag | 69 |
+| tool 调用样本平均 tool calls | 约 2.03 |
+
+本次暴露出的主要问题是 **thinking 过长**，而不是工具反馈不足：大量样本第一轮 assistant 一直停留在 `<think>` 内，30k 字符左右仍在推导边界条件或实现细节，完全没有进入 `run_public_tests` / `submit_solution`。一旦模型闭合 thinking 并进入工具协议，成功率并不低：出现 tool tag 的 69 条里有 53 条 accepted。
+
+因此当前不能关闭 thinking，但需要约束 thinking 行为。优先采用 verl / Qwen3 原生超参方向，而不是立刻 patch agent loop：
+
+- thinking mode 下不要使用 greedy validation。当前 `val_kwargs.temperature=0`、`do_sample=false` 容易导致 Qwen3 长思考和重复推导。
+- 下一次 focused smoke 先调整 validation sampling：`temperature=0.6`、`top_p=0.95`、`top_k=20`。
+- 保持 `enable_thinking=true`、`MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192` 不变，先观察 `unclosed_think_rate`、`num_tool_calls=0` 比例、accepted rate 和平均输出长度。
+- 如果超参调整后仍然大量卡在 `<think>`，再进入第二步：通过 verl 的 `agent_loop_config_path` / custom agent loop 扩展实现 Qwen3 thinking budget 两段生成，而不是直接修改 verl 核心源码。
+
+本次 run 的报错：
+
+```text
+RuntimeError: Sizes of tensors must match except in dimension 0. Expected size 6663 but got size 4096 for tensor number 1 in the list.
+```
+
+该错误发生在 `async_rollout_manager.generate_sequences()` 内部的 `DataProto.concat(outputs)`，当前判断与上次 batch shape mismatch 属同类问题：仍有样本在 agent loop 返回时 tensor 宽度没有统一到 batch 内固定形状，可能还是 prompt / multi-turn prompt 过滤或截断没有完全覆盖。由于 partial dump 在每个 batch 完成后才写出，崩溃中的第 34 个 batch 没有落盘；已完成的 264 条可用于行为分析，但不能算完整 baseline。
+
+此外还有两个 trajectory 控制问题需要关注：
+
+1. **accepted 后没有立即终止 trajectory**：本次 accepted submit 样本中，`submit_solution: accepted` 后仍会继续生成 assistant thinking/text，平均多消耗约 2400 字符。这会浪费 response budget 和卡时，并可能污染后续结构化分析。后续应确认 verl `ToolAgentLoop` 是否支持基于 tool result 的 terminal stop；如果不支持，需要在 custom agent loop 或 tool adapter 层补 accepted terminal 语义。
+2. **verl tool state 可能没有跨 tool call 持久化**：当前 verl `ToolAgentLoop` 每次 tool 调用都会 `create -> execute -> release`，而 `src/verl_tools/oj_tools.py` 的 `public_test_call_count` / `submission_count` 存在 per-instance state 中。这样 `max_public_test_calls` / `max_submissions` 在 verl 在线 eval 中可能不会跨回合累计，和本地 `CodeEnvironment` 语义不完全一致。后续需要通过 focused smoke 或单测确认真实行为；如确认不持久，应改为基于 `request_id` / `agent_data` / trajectory-level session 的状态管理。
+
 ## 验证状态
 
 最近记录在 `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 的验证：
@@ -123,7 +169,7 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 - 清理 sharded fallback 和 `sitecustomize.py` 后，2GPU smoke 再次通过。
 - 2026-04-29 1GPU structured output smoke 通过：`smoke_structured_output_20260429_185821`，`VAL_MAX_SAMPLES=2`，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条，且均包含 `structured_output.events`。
 
-2026-04-29 对 `codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713` 做了离线输出分析，但没有重新运行远端 GPU baseline。任何“当前代码已完全通过正式 baseline”或“效率问题已解决”的表述都应等下一次真实 A800 smoke / full eval 后再写入。
+2026-04-29 对 `codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713` 做了离线输出分析。随后分析了 `smoke_structured_2gpu_`，该 run 已完成 264 条 partial generation，但最终因 `DataProto.concat` shape mismatch 中断，没有写出最终 `0.jsonl`。任何“当前代码已完全通过正式 baseline”或“效率问题已解决”的表述都应等下一次真实 A800 smoke / full eval 后再写入。
 
 ## 下一步
 
@@ -131,26 +177,46 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 
 ### Phase 1：trajectory 可控
 
-1. `max_public_test_calls=15`、首错即停、首错 observation 和 eval thinking 已实现；下一步需要 A800 focused smoke 验证真实 trajectory。
+1. `max_public_test_calls=15`、首错即停、首错 observation 和 eval thinking 已实现；最新 2GPU run 暴露主要问题是 thinking 过长，下一步先用 Qwen3 thinking 推荐采样超参重跑 focused smoke：`temperature=0.6`、`top_p=0.95`、`top_k=20`，并保持 `enable_thinking=true`。
 2. (P2) 重复代码短路暂不实现，除非 smoke 仍显示重复 judge 是主要瓶颈。
-3. (P5) 多轮交互输出格式已实现为 `structured_output.events`，后续只需根据人工查看体验微调字段名或展示脚本。
+3. 确认并修复 accepted terminal 语义：`submit_solution` accepted 后应立即结束当前 trajectory，不再继续生成 assistant 文本。
+4. 确认并修复 verl tool state 持久化：`max_public_test_calls` 和 `max_submissions` 必须在同一道题的一条 trajectory 内跨 tool call 累计，不能因每次 `create/release` 重置。
+5. (P5) 多轮交互输出格式已实现为 `structured_output.events`，但当前自定义格式（`type: assistant_text/tool_call/tool_response`）不是标准 HuggingFace chat messages 格式。需要改为标准 `messages` 格式（`role: user/assistant/tool` + `tool_calls` + `tool_call_id`），方便直接喂给 `tokenizer.apply_chat_template()` 或被 HuggingFace `datasets`/TRL 等工具链消费。
+
+   **当前格式 → 标准格式对照：**
+   
+   ```text
+   # 当前 events 格式
+   {"type": "assistant_text", "content": "模型思考..."}
+   {"type": "tool_call", "name": "run_public_tests", "arguments": {"code": "..."}}
+   {"type": "tool_response", "content": "测试结果"}
+   
+   # 目标 messages 格式 (HuggingFace/OpenAI 标准)
+   {"role": "assistant", "content": "模型思考..."}
+   {"role": "assistant", "content": null, "tool_calls": [
+     {"id": "call_0", "type": "function", "function": {"name": "run_public_tests", "arguments": "{\"code\": \"...\"}"}}
+   ]}
+   {"role": "tool", "tool_call_id": "call_0", "content": "测试结果"}
+   ```
+   
+   **改动点：** `src/trajectory_parser.py` → 增加 `to_messages()` 函数；`src/verl_runtime_patch.py` → 同时在 jsonl 中写入 `messages` 字段；`structured_output.events` 可暂时保留作为内部中间表示。
 
 ### Phase 2：budget 暂不动
 
-4. baseline eval 默认保持 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`，暂不下调 response budget。
+6. baseline eval 默认保持 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`，暂不下调整条 trajectory response budget。当前先通过 validation sampling 超参减少过长 thinking；如果 focused smoke 仍显示 `<think>` 大量未闭合，再设计 custom agent loop 的 per-thinking budget / early-stopping prompt。
 
 ### Phase 3：验证与评测
 
-5. Review 当前未提交改动，确认无意外行为。
-6. 本地单元级验证已覆盖：
+7. Review 当前未提交改动，确认无意外行为。
+8. 本地单元级验证已覆盖：
    - public/private judge 遇到首个失败 case 即停止
    - `max_public_test_calls` 不破坏 `max_submissions=5` 语义
    - verl parquet `create_kwargs` 携带 public call cap
-7. 训练服务器 focused smoke（`VAL_MAX_SAMPLES=4`），观察 tool call、submit 率、每题耗时、GPU 利用率。
-8. smoke 通过后调并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32` 等。
-9. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`。
-10. `livecodebench_test`。
-11. 结果同步回本文。
+9. 训练服务器 focused smoke（建议先 `VAL_MAX_SAMPLES=32`，再视情况缩小到触发 shape mismatch 的边界样本），重点观察 `unclosed_think_rate`、`num_tool_calls=0` 比例、submit 率、accepted rate、accepted 后额外输出长度、public/submission 计数是否跨 tool call 累计、平均输出长度、每题耗时和 GPU 利用率。
+10. smoke 通过后调并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32` 等。
+11. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`。
+12. `livecodebench_test`。
+13. 结果同步回本文。
 
 ## 交接提示
 
