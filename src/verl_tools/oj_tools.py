@@ -13,6 +13,7 @@ from verl.tools.schemas import OpenAIFunctionToolSchema, ToolResponse
 
 from src.env.tools import (
     DEFAULT_MAX_PUBLIC_TEST_CALLS,
+    VERDICT_ACCEPTED,
     VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED,
     VERDICT_SUBMISSION_LIMIT_EXCEEDED,
     format_judge_observation,
@@ -20,6 +21,11 @@ from src.env.tools import (
     reward_for_result,
     run_oj_judge,
 )
+
+
+_SESSION_STATE_KEY = "code_agent_oj_tool_state"
+_TERMINAL_KEY = "code_agent_terminal"
+_TERMINAL_REASON_KEY = "code_agent_terminal_reason"
 
 
 def _load_tests(value: Any):
@@ -61,6 +67,65 @@ class _OJBaseTool(BaseTool):
         super().__init__(config, tool_schema)
         self._instances: dict[str, dict[str, Any]] = {}
 
+    def _get_session_state(self, agent_data: Any | None) -> dict[str, Any] | None:
+        if agent_data is None:
+            return None
+        state = getattr(agent_data, _SESSION_STATE_KEY, None)
+        if state is None:
+            state = {
+                "public_test_call_count": 0,
+                "submission_count": 0,
+                "accepted": False,
+            }
+            setattr(agent_data, _SESSION_STATE_KEY, state)
+        return state if isinstance(state, dict) else None
+
+    def _restore_session_state(
+        self,
+        inst: dict[str, Any],
+        session_state: dict[str, Any] | None,
+    ) -> None:
+        if not session_state:
+            return
+        inst["public_test_call_count"] = int(
+            session_state.get("public_test_call_count", inst["public_test_call_count"])
+        )
+        inst["submission_count"] = int(
+            session_state.get("submission_count", inst["submission_count"])
+        )
+
+    def _save_session_state(
+        self,
+        inst: dict[str, Any],
+        session_state: dict[str, Any] | None,
+        result: dict[str, Any],
+        agent_data: Any | None,
+    ) -> None:
+        if session_state is None:
+            return
+
+        session_state["public_test_call_count"] = int(inst["public_test_call_count"])
+        session_state["submission_count"] = int(inst["submission_count"])
+
+        if result.get("action") != "submit_solution":
+            return
+
+        verdict = result.get("verdict")
+        accepted = verdict == VERDICT_ACCEPTED
+        submissions_exhausted = (
+            int(inst["submission_count"]) >= int(inst["max_submissions"])
+        )
+        if accepted:
+            session_state["accepted"] = True
+
+        if accepted or submissions_exhausted or verdict == VERDICT_SUBMISSION_LIMIT_EXCEEDED:
+            reason = "accepted" if accepted else "submission_limit_exhausted"
+            result["terminal"] = True
+            result["terminal_reason"] = reason
+            if agent_data is not None:
+                setattr(agent_data, _TERMINAL_KEY, True)
+                setattr(agent_data, _TERMINAL_REASON_KEY, reason)
+
     async def create(
         self, instance_id: Optional[str] = None, **kwargs
     ) -> tuple[str, ToolResponse]:
@@ -97,7 +162,12 @@ class _OJBaseTool(BaseTool):
         if not isinstance(code, str):
             code = str(code)
 
+        agent_data = kwargs.get("agent_data")
+        session_state = self._get_session_state(agent_data)
+        self._restore_session_state(inst, session_state)
+
         result = self._run(inst, code)
+        self._save_session_state(inst, session_state, result, agent_data)
         inst["results"].append(result)
 
         observation = format_judge_observation(

@@ -133,7 +133,10 @@ class OJLikeRLHFDataset(RLHFDataset):
           - batch 内 prompt_ids 宽度不统一（2048 vs 3475 vs ...）
           - torch.cat 报 shape mismatch，VAL_BATCH_SIZE > 1 无法跑通
         """
-        if self.processor is not None or self.filter_overlong_prompts:
+        if not self.filter_overlong_prompts:
+            return dataframe
+
+        if self.processor is not None:
             return super().maybe_filter_out_long_prompts(dataframe)
 
         tokenizer = self.tokenizer

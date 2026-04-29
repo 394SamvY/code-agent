@@ -1,4 +1,4 @@
-"""Parse verl tool-agent decoded output into a readable event structure."""
+"""Parse verl tool-agent decoded output into readable trajectory structures."""
 
 from __future__ import annotations
 
@@ -46,55 +46,85 @@ def _parse_tool_call(raw: str) -> dict[str, Any]:
     return event
 
 
-def parse_tool_output(output: str) -> dict[str, Any]:
-    """Parse decoded multi-turn tool-agent output into ordered events.
-
-    The parser is intentionally presentation-oriented. It does not affect reward
-    or rollout execution; it only makes verl generation dumps easier to inspect.
-    """
-    events: list[dict[str, Any]] = []
+def to_messages(
+    output: str,
+    *,
+    initial_messages: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Convert decoded tool-agent output to OpenAI/HuggingFace chat messages."""
+    messages = list(initial_messages or [])
+    pending_tool_call_id: str | None = None
+    tool_call_index = 0
 
     for part in _TAG_RE.split(output or ""):
         if not part:
             continue
 
-        tool_call = _TOOL_CALL_RE.fullmatch(part)
-        if tool_call:
-            events.append(_parse_tool_call(tool_call.group(1).strip()))
-            continue
+        tool_call_match = _TOOL_CALL_RE.fullmatch(part)
+        if tool_call_match:
+            tool_call = _parse_tool_call(tool_call_match.group(1).strip())
+            name = tool_call.get("name")
+            arguments = tool_call.get("arguments")
+            if not name or tool_call.get("parse_error"):
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": f"<tool_call>\n{tool_call.get('raw', '')}\n</tool_call>",
+                    }
+                )
+                pending_tool_call_id = None
+                continue
 
-        tool_response = _TOOL_RESPONSE_RE.fullmatch(part)
-        if tool_response:
-            events.append(
+            tool_call_id = f"call_{tool_call_index}"
+            tool_call_index += 1
+            pending_tool_call_id = tool_call_id
+            messages.append(
                 {
-                    "type": "tool_response",
-                    "content": tool_response.group(1).strip(),
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(
+                                    arguments or {},
+                                    ensure_ascii=False,
+                                ),
+                            },
+                        }
+                    ],
                 }
             )
+            continue
+
+        tool_response_match = _TOOL_RESPONSE_RE.fullmatch(part)
+        if tool_response_match:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": pending_tool_call_id or f"call_{tool_call_index}",
+                    "content": tool_response_match.group(1).strip(),
+                }
+            )
+            pending_tool_call_id = None
             continue
 
         text = _strip_role_prefix(part)
         if text:
-            events.append(
+            messages.append(
                 {
-                    "type": "assistant_text",
+                    "role": "assistant",
                     "content": text,
                 }
             )
 
-    return {
-        "format": "code_agent_tool_events_v1",
-        "events": events,
-        "num_events": len(events),
-        "num_tool_calls": sum(1 for event in events if event["type"] == "tool_call"),
-        "num_tool_responses": sum(
-            1 for event in events if event["type"] == "tool_response"
-        ),
-    }
+    return messages
 
 
-def add_structured_output(record: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of a generation record with parsed `structured_output`."""
+def add_messages(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of a generation record with standard chat messages."""
     enriched = dict(record)
-    enriched["structured_output"] = parse_tool_output(str(record.get("output", "")))
+    enriched["messages"] = to_messages(str(record.get("output", "")))
     return enriched

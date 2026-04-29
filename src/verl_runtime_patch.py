@@ -25,7 +25,7 @@ from typing import Any
 
 import numpy as np
 
-from src.trajectory_parser import parse_tool_output
+from src.trajectory_parser import to_messages
 
 
 _PATCHED = False
@@ -77,6 +77,7 @@ def _append_partial_generations(
     *,
     inputs: list[str],
     outputs: list[str],
+    raw_prompts: list[Any],
     gts: list[Any],
     scores: list[float],
     reward_extra_infos: dict[str, list[Any]],
@@ -104,7 +105,13 @@ def _append_partial_generations(
     base_data = {
         "input": inputs,
         "output": outputs,
-        "structured_output": [parse_tool_output(output) for output in outputs],
+        "messages": [
+            to_messages(
+                output,
+                initial_messages=raw_prompts[i] if i < len(raw_prompts) else None,
+            )
+            for i, output in enumerate(outputs)
+        ],
         "gts": gts,
         "score": scores,
         "step": [trainer.global_steps] * n,
@@ -128,6 +135,7 @@ def _dump_generations_with_structure(
     *,
     inputs: list[str],
     outputs: list[str],
+    raw_prompts: list[Any],
     gts: list[Any],
     scores: list[float],
     reward_extra_infos_dict: dict[str, list[Any]],
@@ -140,7 +148,13 @@ def _dump_generations_with_structure(
     base_data = {
         "input": inputs,
         "output": outputs,
-        "structured_output": [parse_tool_output(output) for output in outputs],
+        "messages": [
+            to_messages(
+                output,
+                initial_messages=raw_prompts[i] if i < len(raw_prompts) else None,
+            )
+            for i, output in enumerate(outputs)
+        ],
         "gts": gts,
         "score": scores,
         "step": [trainer.global_steps] * n,
@@ -155,7 +169,7 @@ def _dump_generations_with_structure(
             entry = {key: values[i] for key, values in base_data.items()}
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    print(f"Dumped structured generations to {filename}")
+    print(f"Dumped generations with messages to {filename}")
 
 
 def _install_validation_partial_dump_patch() -> None:
@@ -206,6 +220,7 @@ def _install_validation_partial_dump_patch() -> None:
 
         sample_inputs = []
         sample_outputs = []
+        sample_raw_prompts = []
         sample_gts = []
         sample_scores = []
         sample_turns = []
@@ -234,6 +249,8 @@ def _install_validation_partial_dump_patch() -> None:
                 for item in test_batch
             ]
             sample_gts.extend(ground_truths)
+            raw_prompts = list(test_batch.non_tensor_batch.get("raw_prompt", []))
+            sample_raw_prompts.extend(raw_prompts)
 
             test_gen_batch = self._get_gen_batch(test_batch)
             test_gen_batch.meta_info = {
@@ -298,6 +315,7 @@ def _install_validation_partial_dump_patch() -> None:
                 self,
                 inputs=input_texts,
                 outputs=output_texts,
+                raw_prompts=raw_prompts,
                 gts=ground_truths,
                 scores=scores,
                 reward_extra_infos=batch_reward_extra_infos,
@@ -321,12 +339,13 @@ def _install_validation_partial_dump_patch() -> None:
             scores=sample_scores,
         )
 
-        # 写出完整的 0.jsonl，并附带 parsed structured_output 方便人工查看。
+        # 写出完整的 0.jsonl，并附带标准 messages 方便后续复用。
         if val_data_dir:
             _dump_generations_with_structure(
                 self,
                 inputs=sample_inputs,
                 outputs=sample_outputs,
+                raw_prompts=sample_raw_prompts,
                 gts=sample_gts,
                 scores=sample_scores,
                 reward_extra_infos_dict=reward_extra_infos_dict,
@@ -360,6 +379,45 @@ def _install_validation_partial_dump_patch() -> None:
     RayPPOTrainer._code_agent_partial_dump = True
 
 
+def _install_tool_agent_terminal_patch() -> None:
+    """Terminate verl ToolAgentLoop after OJ tools mark a trajectory terminal."""
+    from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
+
+    if getattr(ToolAgentLoop, "_code_agent_terminal_stop", False):
+        return
+
+    original_call_tool = ToolAgentLoop._call_tool
+    original_handle_processing_tools_state = ToolAgentLoop._handle_processing_tools_state
+
+    async def call_tool_with_terminal_flag(self, tool_call, tools_kwargs, agent_data):
+        tool_response, tool_reward, result = await original_call_tool(
+            self,
+            tool_call,
+            tools_kwargs,
+            agent_data,
+        )
+        if isinstance(result, dict) and result.get("terminal"):
+            setattr(agent_data, "code_agent_terminal", True)
+            setattr(
+                agent_data,
+                "code_agent_terminal_reason",
+                result.get("terminal_reason") or "tool_terminal",
+            )
+        return tool_response, tool_reward, result
+
+    async def handle_processing_tools_state_with_terminal(self, agent_data):
+        state = await original_handle_processing_tools_state(self, agent_data)
+        if getattr(agent_data, "code_agent_terminal", False):
+            return AgentState.TERMINATED
+        return state
+
+    ToolAgentLoop._call_tool = call_tool_with_terminal_flag
+    ToolAgentLoop._handle_processing_tools_state = (
+        handle_processing_tools_state_with_terminal
+    )
+    ToolAgentLoop._code_agent_terminal_stop = True
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统一入口
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -382,6 +440,7 @@ def apply_patches() -> None:
         return
 
     _install_numpy_json_patch()
+    _install_tool_agent_terminal_patch()
     _install_validation_partial_dump_patch()
     _PATCHED = True
     print("[code-agent] verl runtime patches enabled")

@@ -49,15 +49,16 @@
 | --- | --- |
 | `src/env/tools.py` | judge 遇到首个失败 case 即停；public tests 增加 15 次调用上限；observation 只保留首个失败并裁剪。 |
 | `src/env/code_env.py` | 本地环境同步 `max_public_test_calls` 状态，便捷接口复用 tool executor。 |
-| `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略。 |
-| `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 解析为 `structured_output.events`（当前自定义格式），支持在线落盘和离线补结构化 jsonl。待改为标准 HuggingFace `messages` 格式。 |
-| `src/verl_runtime_patch.py` | partial / final validation generation dump 增加 `structured_output` 字段。 |
+| `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略；通过 `agent_data.extra_fields` 持久化 trajectory-level public/submission 计数，并在 accepted / submit 次数耗尽时标记 terminal。 |
+| `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 转为标准 HuggingFace/OpenAI `messages` 格式，支持在线落盘和离线补 `messages` jsonl。 |
+| `src/verl_runtime_patch.py` | partial / final validation generation dump 增加标准 `messages` 字段；patch `ToolAgentLoop` 在 OJ tool 标记 terminal 后结束当前 trajectory。 |
+| `src/verl_dataset_adapter.py` | 修正 JSON-string prompt 过滤路径：`filter_overlong_prompts=true` 时先 decode，再按真实 chat template token 长度过滤。 |
 | `src/data/verl_dataset.py` | 新导出的 parquet tool create kwargs 带 `max_public_test_calls`；旧 parquet 仍走默认值。 |
-| `scripts/evaluate_baseline_with_verl.sh` | 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`。 |
-| `tests/test_verl_tools.py` / `tests/test_e2e_protocol.py` | 覆盖首错即停、public cap 不消耗 submit 次数、create kwargs 导出。 |
+| `scripts/evaluate_baseline_with_verl.sh` | 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`；validation sampling 默认 `temperature=0.6`、`top_p=0.95`、`top_k=20`、`do_sample=true`，并把 tool schema 传给 dataset 过滤。 |
+| `tests/test_verl_tools.py` / `tests/test_e2e_protocol.py` / `tests/test_oj_verl_tools_state.py` / `tests/test_verl_dataset_adapter.py` | 覆盖首错即停、public cap 不消耗 submit 次数、create kwargs 导出、verl create/release 后计数持久化、accepted terminal 标记、JSON prompt decode 过滤。 |
 | `AGENTS.md` / `README.md` / `docs/*` | 同步当前协议、reward 口径和交接状态。 |
 
-合入前仍应做一次 focused diff review；本地 `py_compile`、`tests/test_verl_tools.py`、`tests/test_e2e_protocol.py` 已通过，A800 focused smoke 尚未重跑。
+合入前仍应做一次 focused diff review；本地 `py_compile`、`tests/test_dataset_protocol.py`、`tests/test_verl_tools.py`、`tests/test_e2e_protocol.py`、`tests/test_trajectory_parser.py`、`tests/test_oj_verl_tools_state.py`、`tests/test_verl_dataset_adapter.py` 已通过。2026-04-29 已补跑 2xA800 focused smoke，见下方最新记录。
 
 ## 最近重要结论
 
@@ -96,7 +97,7 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 
 1. (P2) **重复代码消耗**：模型反复用相同代码调 `run_public_tests`，每次重新跑 subprocess judge 和生成 observation。方案：相同 `tool_name + code_hash` 结果缓存，连续相同代码返回短 observation。当前先不做。
 
-2. (P5) **输出格式不直观**：已改为在 `partial_0.jsonl` 和 `0.jsonl` 中附加 `structured_output`，其 `events` 会按顺序保存 `assistant_text` / `tool_call` / `tool_response`。旧 generation jsonl 可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补结构化视图。
+2. (P5) **输出格式不直观**：已改为在 `partial_0.jsonl` 和 `0.jsonl` 中附加标准 `messages` 字段。旧 generation jsonl 可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补 `messages`。
 
 3. (P4) **eval budget 暂不调整**：当前 baseline eval 默认保持输入限制 `MAX_PROMPT_LENGTH=4096`，整条 trajectory 输出限制 `MAX_RESPONSE_LENGTH=8192`。
 
@@ -112,7 +113,7 @@ outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201
 2. (P1) **公开测试无限循环保护**：`run_public_tests` 增加 `max_public_test_calls=15` 默认上限，达到后返回短提示引导调用 `submit_solution`，不消耗正式提交次数。
 3. (P3) **Observation 累积过长**：public/private judge 均改为遇到首个失败 case 即停止，observation 只展示首个失败 case，并保留文本裁剪。
 4. (P6) **评测开启 thinking**：`scripts/evaluate_baseline_with_verl.sh` 默认 `enable_thinking=true`。
-5. (P5) **多轮输出结构化保存**：新增 `structured_output.events` 在线落盘和离线解析脚本。
+5. (P5) **多轮输出标准 messages 保存**：新增标准 `messages` 在线落盘和离线解析脚本。
 
 ### 2026-04-29 thinking eval smoke 分析
 
@@ -160,6 +161,98 @@ RuntimeError: Sizes of tensors must match except in dimension 0. Expected size 6
 1. **accepted 后没有立即终止 trajectory**：本次 accepted submit 样本中，`submit_solution: accepted` 后仍会继续生成 assistant thinking/text，平均多消耗约 2400 字符。这会浪费 response budget 和卡时，并可能污染后续结构化分析。后续应确认 verl `ToolAgentLoop` 是否支持基于 tool result 的 terminal stop；如果不支持，需要在 custom agent loop 或 tool adapter 层补 accepted terminal 语义。
 2. **verl tool state 可能没有跨 tool call 持久化**：当前 verl `ToolAgentLoop` 每次 tool 调用都会 `create -> execute -> release`，而 `src/verl_tools/oj_tools.py` 的 `public_test_call_count` / `submission_count` 存在 per-instance state 中。这样 `max_public_test_calls` / `max_submissions` 在 verl 在线 eval 中可能不会跨回合累计，和本地 `CodeEnvironment` 语义不完全一致。后续需要通过 focused smoke 或单测确认真实行为；如确认不持久，应改为基于 `request_id` / `agent_data` / trajectory-level session 的状态管理。
 
+### 2026-04-29 follow-up 本地修复与 A800 smoke
+
+本轮没有直接启动完整 baseline；先做了代码级修复、本地最小验证，然后补跑 2xA800 focused smoke。
+
+- `scripts/evaluate_baseline_with_verl.sh` 已将 validation sampling 默认改为 Qwen3 thinking 推荐方向：`temperature=0.6`、`top_p=0.95`、`top_k=20`、`do_sample=true`，继续保持 `enable_thinking=true`、`MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`。
+- shape mismatch 的一个明确代码原因已修复：`src/verl_dataset_adapter.py` 原先在 `filter_overlong_prompts=true` 时反而走父类过滤，仍可能按 JSON string 低估长度；现在会 decode 后按真实 chat template token 长度过滤。eval 脚本也补了 `data.tool_config_path=configs/verl/tool_config.yaml`，让过滤阶段包含 tool schema。
+- `submit_solution` accepted / submit 次数耗尽会在 tool adapter 中写入 trajectory terminal 标记；`src/verl_runtime_patch.py` patch verl `ToolAgentLoop._call_tool()` 和 `_handle_processing_tools_state()`，看到 tool result `terminal=true` 后结束 trajectory 状态机。
+- `public_test_call_count` / `submission_count` 已从 per-instance state 同步到 `agent_data.code_agent_oj_tool_state` 普通属性，即使 verl 每次 tool call 都 `create -> execute -> release`，同一 trajectory 内也会跨 tool call 累计。不要放进 `agent_data.extra_fields`，否则 `DataProto.concat` 会按 batch 维度校验非 tensor 字段并报长度不一致。
+- generation dump 只保留标准 `messages` 字段，消息含 `role`、`tool_calls`、`tool_call_id`；不再落盘自定义 `structured_output`。
+
+#### 2xA800 focused smoke：67GB 配置
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs16_32_v3
+```
+
+命令关键参数：`VAL_MAX_SAMPLES=32`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`、`temperature=0.6`、`top_p=0.95`、`top_k=20`。`partial_0.jsonl` 和 `0.jsonl` 均写出 32 条，没有 shape mismatch。
+
+| 指标 | 数值 |
+|---|---:|
+| 样本数 | 32 |
+| score/accepted rate | 18.75% |
+| `unclosed_think_rate` | 75.0% |
+| `num_tool_calls = 0` | 78.1% |
+| submit sample rate | 21.9% |
+| 平均输出长度 | 28,192 字符 |
+| 平均 tool calls | 0.44 |
+| max public / submit calls | 1 / 1 |
+| public/submission limit observation | 0 / 0 |
+| accepted 后额外输出平均 / max | 2,813 / 5,098 字符 |
+| `structured_output` | 无 |
+| GPU max memory | 67.5GB / 67.5GB |
+| GPU avg active util | 75.6% / 67.9% |
+| high-memory 每题耗时估算 | 12.3s |
+
+结论：
+
+- Qwen3 推荐 sampling 能完整跑通 32 条，当前没有复现 shape mismatch。
+- thinking 过长仍是主要问题：`unclosed_think_rate` 仍约 75%，`num_tool_calls=0` 仍约 78%。
+- accepted 后不再出现重复 submit，说明 tool state 跨 `create -> execute -> release` 累计生效；但 accepted tool call 后仍有 1 条 assistant 尾部文本。定位结果：这些 token 多半是同一次 assistant generation 在 `<tool_call>` 后继续生成的尾部说明，工具 accepted 后终止状态机不能回收已经生成的尾部 token。下一步需要在 agent loop 中截断 tool_call 后的同轮尾部，或在 parser/dump 层先裁剪标准 messages。
+
+#### 2xA800 focused smoke：77GB probe
+
+调参说明见 `docs/operations/gpu_eval_tuning.md`。
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
+```
+
+命令关键参数：`VAL_MAX_SAMPLES=32`、`VAL_BATCH_SIZE=24`、`AGENT_WORKERS=24`、`MAX_NUM_SEQS=48`、`GPU_MEMORY_UTILIZATION=0.94`、`MAX_NUM_BATCHED_TOKENS=49152`。`partial_0.jsonl` 和 `0.jsonl` 均写出 32 条，没有 OOM，也没有 shape mismatch。
+
+| 指标 | 数值 |
+|---|---:|
+| 样本数 | 32 |
+| score mean | 0.1267 |
+| accepted rate | 12.5% |
+| `unclosed_think_rate` | 65.6% |
+| `num_tool_calls = 0` | 65.6% |
+| submit sample rate | 25.0% |
+| 平均输出长度 | 27,114 字符 |
+| 平均 tool calls | 0.53 |
+| max public / submit calls | 1 / 1 |
+| accepted 后额外输出平均 / max | 3,501 / 4,534 字符 |
+| GPU max memory | 77.8GB / 77.8GB |
+| GPU avg active util | 80.9% / 67.8% |
+| high-memory 每题耗时估算 | 14.2s |
+
+结论：
+
+- `GPU_MEMORY_UTILIZATION=0.94` 能把 A800 显存推到约 77.8GB，32 条 smoke 稳定完成。
+- 77GB probe 没有比 67GB 配置更快：high-memory 区间每题耗时从约 12.3s 变成约 14.2s。继续加显存和并发开始受少数长 thinking 轨迹、自回归长尾和调度成本影响，暂不建议作为默认。
+- 当前默认更建议保持 67GB 级配置（`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`），下一步优先解决 thinking 过长和 tool_call 后尾部截断。
+
+对 `outputs/verl_baseline_eval/smoke_structured_2gpu_/generations/partial_0.jsonl` 复算的行为基线：
+
+| 指标 | 数值 |
+|---|---:|
+| 样本数 | 264 |
+| `unclosed_think_rate` | 73.9% |
+| `num_tool_calls = 0` | 74.2% |
+| submit 率 | 23.9% |
+| accepted 率 | 20.1% |
+| 平均输出长度 | 27,808 字符 |
+| 平均 tool calls | 0.54 |
+| accepted 后额外输出平均 / p50 / max | 2,419 / 2,425 / 4,602 字符 |
+
+`verl_eval.log` 没有记录按时间采样的 GPU 利用率，只能看到本次配置 `gpu_memory_utilization=0.55`；下一次 focused smoke 应显式并行跑 `scripts/monitor_gpu.sh` 或等价 `nvidia-smi` 采样。
+
 ## 验证状态
 
 最近记录在 `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 的验证：
@@ -167,7 +260,9 @@ RuntimeError: Sizes of tensors must match except in dimension 0. Expected size 6
 - 1GPU partial dump smoke 通过，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条。
 - 2GPU 统一调度 smoke 通过，两个 SGLang server 分别绑定 GPU0 和 GPU1，`partial_0.jsonl` 和 `0.jsonl` 均写出 4 条。
 - 清理 sharded fallback 和 `sitecustomize.py` 后，2GPU smoke 再次通过。
-- 2026-04-29 1GPU structured output smoke 通过：`smoke_structured_output_20260429_185821`，`VAL_MAX_SAMPLES=2`，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条，且均包含 `structured_output.events`。
+- 2026-04-29 1GPU structured output smoke 通过：`smoke_structured_output_20260429_185821`，`VAL_MAX_SAMPLES=2`，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条。该历史 run 使用过旧的自定义结构字段；当前新输出只保留标准 `messages`。
+- 2026-04-29 2xA800 67GB focused smoke 通过：`smoke_sampling_t06_topk20_vbs16_32_v3`，32 条完整写出，无 shape mismatch，无 `structured_output`。
+- 2026-04-29 2xA800 77GB probe 通过：`smoke_sampling_t06_topk20_vbs24_32_mem094`，32 条完整写出，无 OOM、无 shape mismatch；但比 67GB 配置更慢，暂不建议作为默认。
 
 2026-04-29 对 `codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713` 做了离线输出分析。随后分析了 `smoke_structured_2gpu_`，该 run 已完成 264 条 partial generation，但最终因 `DataProto.concat` shape mismatch 中断，没有写出最终 `0.jsonl`。任何“当前代码已完全通过正式 baseline”或“效率问题已解决”的表述都应等下一次真实 A800 smoke / full eval 后再写入。
 
@@ -177,29 +272,11 @@ RuntimeError: Sizes of tensors must match except in dimension 0. Expected size 6
 
 ### Phase 1：trajectory 可控
 
-1. `max_public_test_calls=15`、首错即停、首错 observation 和 eval thinking 已实现；最新 2GPU run 暴露主要问题是 thinking 过长，下一步先用 Qwen3 thinking 推荐采样超参重跑 focused smoke：`temperature=0.6`、`top_p=0.95`、`top_k=20`，并保持 `enable_thinking=true`。
+1. `max_public_test_calls=15`、首错即停、首错 observation、eval thinking 和 Qwen3 thinking validation sampling 默认值已实现；下一步用该配置重跑 focused smoke，并保持 `enable_thinking=true`。
 2. (P2) 重复代码短路暂不实现，除非 smoke 仍显示重复 judge 是主要瓶颈。
-3. 确认并修复 accepted terminal 语义：`submit_solution` accepted 后应立即结束当前 trajectory，不再继续生成 assistant 文本。
-4. 确认并修复 verl tool state 持久化：`max_public_test_calls` 和 `max_submissions` 必须在同一道题的一条 trajectory 内跨 tool call 累计，不能因每次 `create/release` 重置。
-5. (P5) 多轮交互输出格式已实现为 `structured_output.events`，但当前自定义格式（`type: assistant_text/tool_call/tool_response`）不是标准 HuggingFace chat messages 格式。需要改为标准 `messages` 格式（`role: user/assistant/tool` + `tool_calls` + `tool_call_id`），方便直接喂给 `tokenizer.apply_chat_template()` 或被 HuggingFace `datasets`/TRL 等工具链消费。
-
-   **当前格式 → 标准格式对照：**
-   
-   ```text
-   # 当前 events 格式
-   {"type": "assistant_text", "content": "模型思考..."}
-   {"type": "tool_call", "name": "run_public_tests", "arguments": {"code": "..."}}
-   {"type": "tool_response", "content": "测试结果"}
-   
-   # 目标 messages 格式 (HuggingFace/OpenAI 标准)
-   {"role": "assistant", "content": "模型思考..."}
-   {"role": "assistant", "content": null, "tool_calls": [
-     {"id": "call_0", "type": "function", "function": {"name": "run_public_tests", "arguments": "{\"code\": \"...\"}"}}
-   ]}
-   {"role": "tool", "tool_call_id": "call_0", "content": "测试结果"}
-   ```
-   
-   **改动点：** `src/trajectory_parser.py` → 增加 `to_messages()` 函数；`src/verl_runtime_patch.py` → 同时在 jsonl 中写入 `messages` 字段；`structured_output.events` 可暂时保留作为内部中间表示。
+3. accepted terminal 语义已部分修复：`submit_solution` accepted 后不再继续下一轮 tool submit，`max_submit_calls_messages=1`；但同一轮 assistant generation 在 `<tool_call>` 后的尾部文本仍会落入输出，accepted 后额外输出还不是 0。下一步应截断 tool_call 后尾部 token 或先在 messages dump 层裁剪。
+4. verl tool state 持久化已验证：`max_public_test_calls` 和 `max_submissions` 在同一道题的一条 trajectory 内通过 `agent_data.code_agent_oj_tool_state` 跨 tool call 累计；不要使用 `extra_fields` 保存该 state。
+5. (P5) 多轮交互输出格式已补标准 `messages` 格式（`role: user/assistant/tool` + `tool_calls` + `tool_call_id`）；在线和离线 jsonl 都不再输出自定义 `structured_output` 字段。`src/trajectory_parser.py` 只保留 `to_messages()` 作为标准 messages 转换入口。
 
 ### Phase 2：budget 暂不动
 
@@ -212,9 +289,9 @@ RuntimeError: Sizes of tensors must match except in dimension 0. Expected size 6
    - public/private judge 遇到首个失败 case 即停止
    - `max_public_test_calls` 不破坏 `max_submissions=5` 语义
    - verl parquet `create_kwargs` 携带 public call cap
-9. 训练服务器 focused smoke（建议先 `VAL_MAX_SAMPLES=32`，再视情况缩小到触发 shape mismatch 的边界样本），重点观察 `unclosed_think_rate`、`num_tool_calls=0` 比例、submit 率、accepted rate、accepted 后额外输出长度、public/submission 计数是否跨 tool call 累计、平均输出长度、每题耗时和 GPU 利用率。
-10. smoke 通过后调并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32` 等。
-11. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`。
+9. 训练服务器 focused smoke 已完成两轮 32 条；下一步先处理 accepted 后 tool_call 尾部截断和 thinking 过长，再决定是否跑 `VAL_MAX_SAMPLES=500`。
+10. 当前推荐并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`。77GB probe 虽稳定但更慢，暂不作为默认。
+11. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`，建议在 accepted 尾部截断修复后再跑。
 12. `livecodebench_test`。
 13. 结果同步回本文。
 

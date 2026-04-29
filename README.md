@@ -166,9 +166,9 @@ CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodeben
 说明：
 
 - `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
-- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`，并开启 `enable_thinking=true`
+- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`，并开启 `enable_thinking=true`；validation sampling 默认使用 `temperature=0.6`、`top_p=0.95`、`top_k=20`
 - validation 会先增量写 `generations/partial_0.jsonl`，整轮结束后再写 verl 原始的 `generations/0.jsonl`
-- generation jsonl 会附带 `structured_output.events`，按顺序保存 `assistant_text` / `tool_call` / `tool_response`；旧文件可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补结构化视图
+- generation jsonl 会附带标准 `messages` 字段；旧文件可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补 `messages`
 - 不再维护“两张卡各自启动一个 verl 进程”的分片 fallback；当前评测应通过单个 verl 进程统一调度多卡
 - `verl/trainer/main_eval.py` 不是在线工具评测入口；它只对已经生成好的 responses 做离线 reward 打分
 

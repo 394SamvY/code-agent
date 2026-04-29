@@ -95,6 +95,10 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-1}"
 TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
+VAL_TEMPERATURE="${VAL_TEMPERATURE:-0.6}"
+VAL_TOP_P="${VAL_TOP_P:-0.95}"
+VAL_TOP_K="${VAL_TOP_K:-20}"
+VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-true}"
 
 if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
     echo "[ERROR] NUM_GPUS=$NUM_GPUS exceeds visible GPU count $VISIBLE_GPU_COUNT from CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES_RESOLVED"
@@ -202,6 +206,10 @@ echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION"
 echo "  max_batched_tokens:   $MAX_NUM_BATCHED_TOKENS"
 echo "  max_num_seqs:         $MAX_NUM_SEQS"
 echo "  enforce_eager:        $ENFORCE_EAGER"
+echo "  val_temperature:      $VAL_TEMPERATURE"
+echo "  val_top_p:            $VAL_TOP_P"
+echo "  val_top_k:            $VAL_TOP_K"
+echo "  val_do_sample:        $VAL_DO_SAMPLE"
 echo "  patch_verl:           task_runner"
 echo "  output:               $RUN_DIR"
 echo "  log_file:             $LOG_FILE"
@@ -237,6 +245,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     data.dataloader_num_workers="$DATALOADER_NUM_WORKERS" \
     data.custom_cls.path=src/verl_dataset_adapter.py \
     data.custom_cls.name=OJLikeRLHFDataset \
+    data.tool_config_path=configs/verl/tool_config.yaml \
     data.return_raw_chat=true \
     data.apply_chat_template_kwargs.enable_thinking=true \
     actor_rollout_ref.model.path="$MODEL_PATH" \
@@ -257,8 +266,10 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
     actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0 \
-    actor_rollout_ref.rollout.val_kwargs.do_sample=false \
+    actor_rollout_ref.rollout.val_kwargs.temperature="$VAL_TEMPERATURE" \
+    actor_rollout_ref.rollout.val_kwargs.top_p="$VAL_TOP_P" \
+    actor_rollout_ref.rollout.val_kwargs.top_k="$VAL_TOP_K" \
+    actor_rollout_ref.rollout.val_kwargs.do_sample="$VAL_DO_SAMPLE" \
     actor_rollout_ref.rollout.multi_turn.enable=true \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=configs/verl/tool_config.yaml \
     actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
