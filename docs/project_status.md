@@ -42,11 +42,14 @@
 - `src/verl_dataset_adapter.py`：decode JSON-string parquet 字段，并按真实 chat template token 长度过滤 overlong prompt；不再修改 prompt 内容。
 - `src/trajectory_parser.py` / `scripts/parse_verl_generations.py`：把 verl decoded output 转为标准 `messages`，便于审计 multi-turn 交互。
 
-当前仍未完成的 P0 重点：
+当前 P0 结果：
 
-- Thinking 控制还只是 per-turn hard cap，不等于严格的 Qwen3 thinking 早停语义。必须确认“停止 thinking”不会被实现成“停止 assistant turn / trajectory”，并且 thinking 结束后仍能继续生成 tool call。
-- 需要按 `docs/specs/eval_acceptance_criteria.md` 重跑 32-sample strict smoke，不能沿用旧 500-sample debug run 作为环境可信证据。
-- 需要抽查真实 `messages` 与实际 tool execution 是否一致，包括 malformed tool call、tool 后尾部文本、accepted / submission-limit terminal。
+- 2026-05-01，32-sample strict smoke 已通过真实 verl `AgentLoopWorker` 路径。
+- 有效 run：`outputs/verl_baseline_eval/p0_strict_32_tokenbudget_20260501_0126/generations/0.jsonl`。
+- 审计命令：`python3 scripts/audit_eval_p0.py outputs/verl_baseline_eval/p0_strict_32_tokenbudget_20260501_0126/generations/0.jsonl --expected-rows 32`。
+- 审计结果：`records=32`、`max_valid_tool_calls=3`、`sample_think_then_tool_rows=[0,1,2]`、`sample_failed_feedback_rows=[3,5,8]`，`P0 audit passed`。
+- Qwen3 thinking budget 已按 two-pass 语义接入：第一段只用 token budget，不传 SGLang string stop；预算耗尽且未见 `</think>` 时插入 early-stopping prompt 和 `</think>`，再继续生成最终 answer / tool call。
+- 失败排查结论：早期崩溃不是 OOM，也不是并发过高；根因是 SGLang token-in/token-out 路径下 scheduler 没有 tokenizer，传 `stop=["</think>"]` 会进入 string-stop decode 分支并触发 `AttributeError: 'NoneType' object has no attribute 'decode'`。
 
 ## 验证状态
 
@@ -66,33 +69,17 @@
 
 ## 下一步
 
-1. 按 `docs/specs/eval_acceptance_criteria.md` 跑 32-sample strict smoke：
-
-```bash
-VAL_MAX_SAMPLES=32 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
-```
-
-2. 用生成的 `generations/0.jsonl` 做 P0 审计：
-
-- final 行数是否完整。
-- no-tool 样本是否被 first-turn hard cap 控住，而不是吃满 8192。
-- `max_tool_calls` / `num_turns max` 是否没有旧 run 的 50/100+ 异常。
-- accepted 后是否没有后续有效 tool call。
-- `submission_limit_exceeded` 后是否没有后续有效 tool call。
-- 至少人工抽查 3 条多轮 trajectory，确认 `messages` 与真实 tool execution 对齐。
-- 至少人工抽查 3 条 failed public / failed submit，确认 observation 与结构化 result 一致。
-
-3. 如果 32-sample P0 不通过，先修环境，不跑 500。
-
-4. 如果 32-sample P0 通过，再跑 500-sample CodeContests held-out eval：
+1. 跑 500-sample CodeContests held-out eval：
 
 ```bash
 VAL_MAX_SAMPLES=500 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 ```
 
-5. 500-sample 也通过 P0 后，再进入 P1：2xA800 效率调优。
+2. 对 500-sample 输出继续跑 P0 审计脚本，确认扩大样本后仍没有环境语义回归。
 
-6. 最后再跑 `livecodebench_test`。
+3. 500-sample 也通过后，再进入 P1：2xA800 效率调优。
+
+4. 最后再跑 `livecodebench_test`。
 
 ## 文档入口
 

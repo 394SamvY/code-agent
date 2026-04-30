@@ -34,6 +34,54 @@ from src.trajectory_parser import to_messages
 
 
 _PATCHED = False
+_CODE_AGENT_DUMP_ONLY_KEYS = (
+    "code_agent_messages",
+    "code_agent_trace",
+    "code_agent_terminal_reason",
+    "code_agent_parse_failures",
+    "code_agent_tool_tail_chars",
+    "code_agent_thinking_budget_reached",
+    "code_agent_thinking_unclosed",
+)
+
+
+def _value_at(values: Any, index: int, default: Any = None) -> Any:
+    try:
+        if values is None:
+            return default
+        return values[index]
+    except Exception:
+        return default
+
+
+def _messages_for_record(output: str, raw_prompt: Any, reward_extra_infos: dict[str, list[Any]], index: int) -> list:
+    traced = _value_at(reward_extra_infos.get("code_agent_messages"), index)
+    if isinstance(traced, list):
+        return traced
+    return to_messages(output, initial_messages=raw_prompt)
+
+
+def _trace_fields_for_record(reward_extra_infos: dict[str, list[Any]], index: int) -> dict[str, Any]:
+    trace = _value_at(reward_extra_infos.get("code_agent_trace"), index, {})
+    if not isinstance(trace, dict):
+        trace = {}
+    return {
+        "code_agent_trace": trace,
+        "terminal_reason": (
+            trace.get("terminal_reason")
+            or _value_at(reward_extra_infos.get("code_agent_terminal_reason"), index)
+        ),
+        "parse_failures": (
+            trace.get("parse_failures")
+            if trace
+            else _value_at(reward_extra_infos.get("code_agent_parse_failures"), index, 0)
+        ),
+        "tool_tail_chars": (
+            trace.get("tail_text_chars")
+            if trace
+            else _value_at(reward_extra_infos.get("code_agent_tool_tail_chars"), index, 0)
+        ),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -111,9 +159,11 @@ def _append_partial_generations(
         "input": inputs,
         "output": outputs,
         "messages": [
-            to_messages(
+            _messages_for_record(
                 output,
-                initial_messages=raw_prompts[i] if i < len(raw_prompts) else None,
+                raw_prompts[i] if i < len(raw_prompts) else None,
+                reward_extra_infos,
+                i,
             )
             for i, output in enumerate(outputs)
         ],
@@ -130,6 +180,7 @@ def _append_partial_generations(
     with open(filename, "a", encoding="utf-8") as f:
         for i in range(n):
             entry = {key: values[i] for key, values in base_data.items()}
+            entry.update(_trace_fields_for_record(reward_extra_infos, i))
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())
@@ -154,9 +205,11 @@ def _dump_generations_with_structure(
         "input": inputs,
         "output": outputs,
         "messages": [
-            to_messages(
+            _messages_for_record(
                 output,
-                initial_messages=raw_prompts[i] if i < len(raw_prompts) else None,
+                raw_prompts[i] if i < len(raw_prompts) else None,
+                reward_extra_infos_dict,
+                i,
             )
             for i, output in enumerate(outputs)
         ],
@@ -172,6 +225,7 @@ def _dump_generations_with_structure(
     with open(filename, "w", encoding="utf-8") as f:
         for i in range(n):
             entry = {key: values[i] for key, values in base_data.items()}
+            entry.update(_trace_fields_for_record(reward_extra_infos_dict, i))
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     print(f"Dumped generations with messages to {filename}")
@@ -315,6 +369,20 @@ def _install_validation_partial_dump_patch() -> None:
                     reward_extra_infos_dict[key] = []
                 reward_extra_infos_dict[key].extend(values_list)
 
+            # These are produced inside the real AgentLoopWorker and are not
+            # reward outputs. Copy them directly so generation dumps can audit
+            # actual tool execution instead of reconstructing it from text.
+            for key in _CODE_AGENT_DUMP_ONLY_KEYS:
+                if key not in test_batch.non_tensor_batch:
+                    continue
+                values = test_batch.non_tensor_batch[key]
+                values_list = values.tolist() if isinstance(values, np.ndarray) else values
+                values_list = values_list if isinstance(values_list, list) else [values_list]
+                batch_reward_extra_infos[key] = values_list
+                if key not in reward_extra_infos_dict:
+                    reward_extra_infos_dict[key] = []
+                reward_extra_infos_dict[key].extend(values_list)
+
             # ← 在这里增量写出，每个 batch 完成后立刻落盘
             _append_partial_generations(
                 self,
@@ -372,10 +440,15 @@ def _install_validation_partial_dump_patch() -> None:
             }
 
         data_sources = np.concatenate(data_source_lst, axis=0)
+        metric_extra_infos_dict = {
+            key: values
+            for key, values in reward_extra_infos_dict.items()
+            if key not in _CODE_AGENT_DUMP_ONLY_KEYS
+        }
         return self._val_metrics_update(
             data_sources,
             sample_uids,
-            reward_extra_infos_dict,
+            metric_extra_infos_dict,
             sample_turns,
         )
 
