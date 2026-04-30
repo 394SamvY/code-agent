@@ -79,7 +79,22 @@ VAL_MAX_SAMPLES=500 bash scripts/evaluate_baseline_with_verl.sh codecontests_tes
 
 3. 500-sample 也通过后，再进入 P1：2xA800 效率调优。
 
-4. 最后再跑 `livecodebench_test`。
+### 下一步：替换为 SGLang 原生 thinking budget
+
+当前 `_handle_generating_state_with_thinking_stop`（200 行两阶段生成）原理是两次 `generate()` 调用，各自限制 `max_new_tokens`——thinking 阶段 1024，action 阶段用剩余预算。
+
+但 SGLang 已原生支持 per-request thinking budget，通过 `Qwen3ThinkingBudgetLogitProcessor` + `custom_params.thinking_budget`。当前安装的 SGLang 版本已包含 `Qwen3ThinkingBudgetLogitProcessor`。
+
+替换后 `verl_agent_loop.py` 可删掉 `_handle_generating_state_with_thinking_stop` 整个方法，回到 `super()._handle_generating_state()`，只靠 `sampling_params` 注入 `thinking_budget`。
+
+实施步骤：
+
+1. **验证 SGLang 内部 API 是否在 `sampling_params` 里认 `thinking_budget`**：
+   - 在 `_sampling_params_with_turn_budget` 中临时加 `"thinking_budget": thinking_budget`
+   - 跑一条样本，确认 `<\think>` 长度受限
+2. **如果内部 API 不认**：patch `async_sglang_server.py` 的 `generate()` 方法，把 `custom_logit_processor` 传入 `GenerateReqInput`
+3. **Server 启动参数**：确认 `--enable-custom-logit-processor --reasoning-parser qwen3` 已加
+4. **成功后清理**：删除两阶段生成代码，参数从 `CODE_AGENT_*` 环境变量改为 SGLang 原生 `thinking_budget`
 
 ## 文档入口
 

@@ -296,7 +296,7 @@ def test_im_end_after_tool_call_still_executes_tool():
             assert trace["terminal_reason"] is None
             assert trace["assistant_turns"][0]["model_im_end"] is True
             assert trace["assistant_turns"][0]["tool_call_count"] == 1
-            assert agent_data.extra_fields["code_agent_messages"][-1]["tool_calls"][0]["function"]["name"] == "submit_solution"
+            assert agent_data.tool_calls[0].name == "submit_solution"
 
     asyncio.run(run())
     print("[PASS] test_im_end_after_tool_call_still_executes_tool")

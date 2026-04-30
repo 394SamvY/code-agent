@@ -35,7 +35,6 @@ from src.trajectory_parser import to_messages
 
 _PATCHED = False
 _CODE_AGENT_DUMP_ONLY_KEYS = (
-    "code_agent_messages",
     "code_agent_trace",
     "code_agent_terminal_reason",
     "code_agent_parse_failures",
@@ -55,9 +54,6 @@ def _value_at(values: Any, index: int, default: Any = None) -> Any:
 
 
 def _messages_for_record(output: str, raw_prompt: Any, reward_extra_infos: dict[str, list[Any]], index: int) -> list:
-    traced = _value_at(reward_extra_infos.get("code_agent_messages"), index)
-    if isinstance(traced, list):
-        return traced
     return to_messages(output, initial_messages=raw_prompt)
 
 
