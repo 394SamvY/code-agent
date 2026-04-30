@@ -161,10 +161,10 @@ used the full `MAX_RESPONSE_LENGTH=8192`. The current focused debug script is:
 bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
 ```
 
-It keeps `enable_thinking=true` and `MAX_RESPONSE_LENGTH=8192`, but adds:
+It keeps `enable_thinking=true` and `MAX_RESPONSE_LENGTH=8192`, but adds
+per-assistant-turn hard budgets:
 
 ```bash
-CODE_AGENT_PROMPT_STYLE=short_thinking
 CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072
 CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048
 ```

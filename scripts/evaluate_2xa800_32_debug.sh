@@ -2,8 +2,8 @@
 # Focused 32-sample eval smoke for 2xA800-80GB.
 #
 # This script keeps the normal OJ-like verl validation path, but pins the
-# currently useful A800 knobs, enables GPU monitoring, and applies the opt-in
-# short-thinking controls used for debugging response-budget waste.
+# currently useful A800 knobs, enables GPU monitoring, and applies the
+# per-assistant-turn token budgets used for debugging response-budget waste.
 #
 # Usage:
 #   bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
@@ -40,19 +40,12 @@ export VAL_TOP_K="${VAL_TOP_K:-20}"
 export VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-true}"
 export LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-1}"
 
-# Short-thinking controls.
-#
-# CODE_AGENT_PROMPT_STYLE=short_thinking:
-#   Soft control. src/verl_dataset_adapter.py dynamically appends a short
-#   instruction to the decoded system prompt. It does not rewrite parquet files
-#   and does not disable Qwen3 thinking mode.
-#
+# Assistant turn budget controls.
 # CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET / CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:
 #   Hard controls implemented by src.verl_agent_loop.CodeAgentToolAgentLoop
 #   inside verl AgentLoopWorker processes. They cap one assistant generation
 #   call, not the whole trajectory. MAX_RESPONSE_LENGTH stays 8192, so
 #   multi-turn repair can still use remaining budget after tools.
-export CODE_AGENT_PROMPT_STYLE="${CODE_AGENT_PROMPT_STYLE:-short_thinking}"
 export FIRST_ASSISTANT_TURN_TOKEN_BUDGET="${FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-3072}"
 export FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET="${FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:-2048}"
 export CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET="${CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-$FIRST_ASSISTANT_TURN_TOKEN_BUDGET}"

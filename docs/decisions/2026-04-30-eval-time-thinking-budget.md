@@ -2,6 +2,8 @@
 
 日期：2026-04-30
 
+> 2026-05-01 更新：本文中的 soft control（`CODE_AGENT_PROMPT_STYLE=short_thinking`，动态追加 system prompt 约束）已废弃并从运行时移除。当前默认只保留 hard control：`CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072` 与 `CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048`。以下原文保留为历史调试背景。
+
 ## 决策
 
 baseline eval 默认启用两层 eval-time 控制，缓解 Qwen3 在 thinking mode 下长时间停留在未闭合 `<think>`、耗尽整条 trajectory `MAX_RESPONSE_LENGTH=8192` 的问题：
