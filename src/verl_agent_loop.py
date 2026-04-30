@@ -620,9 +620,12 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         agent_data.extra_fields["code_agent_parse_failures"] = trace["parse_failures"]
 
         # ── terminal 检测 ────────────────────────────
-        # OjTool 在 accepted / submit 次数耗尽时返回 terminal=true 或 verdict in TERMINAL_VERDICTS
+        # 只有正式提交的 accepted / submission_limit 才是 OJ terminal；
+        # run_public_tests 可能也返回 accepted，但只代表 public tests 通过。
         verdict = (result or {}).get("verdict")
-        if event["executed"] and (event.get("terminal") or verdict in TERMINAL_VERDICTS):
+        action = (result or {}).get("action")
+        is_submit_terminal = action == "submit_solution" and verdict in TERMINAL_VERDICTS
+        if event["executed"] and (event.get("terminal") or is_submit_terminal):
             reason = event.get("terminal_reason") or verdict or "terminal"
             _record_terminal(agent_data, reason)
 

@@ -73,7 +73,11 @@ def _terminal_violation(record: dict[str, Any]) -> bool:
         if terminal_seen:
             return True
         result = event.get("result") or {}
-        if event.get("terminal") or result.get("verdict") in {"accepted", "submission_limit_exceeded"}:
+        is_submit_terminal = (
+            result.get("action") == "submit_solution"
+            and result.get("verdict") in {"accepted", "submission_limit_exceeded"}
+        )
+        if event.get("terminal") or is_submit_terminal:
             terminal_seen = True
     return False
 

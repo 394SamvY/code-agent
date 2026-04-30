@@ -79,22 +79,25 @@ VAL_MAX_SAMPLES=500 bash scripts/evaluate_baseline_with_verl.sh codecontests_tes
 
 3. 500-sample 也通过后，再进入 P1：2xA800 效率调优。
 
-### 下一步：替换为 SGLang 原生 thinking budget
+### Thinking budget 方向
 
-当前 `_handle_generating_state_with_thinking_stop`（200 行两阶段生成）原理是两次 `generate()` 调用，各自限制 `max_new_tokens`——thinking 阶段 1024，action 阶段用剩余预算。
+当前继续使用 two-pass eval-time thinking budget，不再把 SGLang 原生 `Qwen3ThinkingBudgetLogitProcessor` 作为近期主线。
 
-但 SGLang 已原生支持 per-request thinking budget，通过 `Qwen3ThinkingBudgetLogitProcessor` + `custom_params.thinking_budget`。当前安装的 SGLang 版本已包含 `Qwen3ThinkingBudgetLogitProcessor`。
+2026-05-01 调研结论：
 
-替换后 `verl_agent_loop.py` 可删掉 `_handle_generating_state_with_thinking_stop` 整个方法，回到 `super()._handle_generating_state()`，只靠 `sampling_params` 注入 `thinking_budget`。
+- SGLang 原生 Qwen3 processor 对首轮 thinking 有效，32-sample retry run 中首轮闭合 thinking 约为 1025-1026 tokens。
+- 在 multi-turn tool-agent 场景中，verl 会把上一轮 `response_ids` 原样追加进下一轮 prompt；历史 prompt 中已有 `</think>` 后，SGLang 原生 processor 会跳过后续轮 thinking 控制。
+- 因此，原生 processor 不适合作为当前 OJ-like multi-turn rollout 的唯一 budget 机制。
 
-实施步骤：
+当前原则：
 
-1. **验证 SGLang 内部 API 是否在 `sampling_params` 里认 `thinking_budget`**：
-   - 在 `_sampling_params_with_turn_budget` 中临时加 `"thinking_budget": thinking_budget`
-   - 跑一条样本，确认 `<\think>` 长度受限
-2. **如果内部 API 不认**：patch `async_sglang_server.py` 的 `generate()` 方法，把 `custom_logit_processor` 传入 `GenerateReqInput`
-3. **Server 启动参数**：确认 `--enable-custom-logit-processor --reasoning-parser qwen3` 已加
-4. **成功后清理**：删除两阶段生成代码，参数从 `CODE_AGENT_*` 环境变量改为 SGLang 原生 `thinking_budget`
+- two-pass 逻辑可以继续用，但不能使用 SGLang string stop。
+- 保留 `CODE_AGENT_ENABLE_THINKING_EARLY_STOP`、`CODE_AGENT_THINKING_TOKEN_BUDGET`、first/followup turn budget。
+- 后续重点转为验证 two-pass correctness，以及研究是否用行为 warm-start 减少模型长思考倾向。
+
+SFT warm-start 规划见：
+
+- `docs/decisions/2026-05-01-sft-warm-start-proposal.md`
 
 ## 文档入口
 
@@ -106,6 +109,7 @@ VAL_MAX_SAMPLES=500 bash scripts/evaluate_baseline_with_verl.sh codecontests_tes
 - `docs/specs/eval_acceptance_criteria.md`：baseline eval P0/P1 验收标准。
 - `docs/specs/verl_parquet_dataset_analysis.md`：verl parquet schema 和数据快照。
 - `docs/operations/gpu_eval_tuning.md`：2xA800 运行和调参记录。
+- `docs/decisions/2026-05-01-sft-warm-start-proposal.md`：短思考、稳定工具调用的 SFT warm-start 提案。
 
 历史追溯：
 

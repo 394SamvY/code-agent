@@ -10,3 +10,7 @@
 - `2026-04-29-oj-like-two-tool-protocol.md`
 - `2026-04-29-verl-validation-baseline.md`
 - `2026-04-30-eval-time-thinking-budget.md`
+
+提案，尚未采纳：
+
+- `2026-05-01-sft-warm-start-proposal.md`
