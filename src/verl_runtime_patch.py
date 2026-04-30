@@ -9,10 +9,15 @@ per-worker CUDA visibility.
   调用链：bash evaluate_baseline_with_verl.sh → verl_main_wrapper.py → run_ppo()
     → Ray 创建 CodeAgentTaskRunner actor → .run(config) → apply_patches()
 
-本文件包含两个 patch：
+本文件包含两个 TaskRunner 侧 patch：
   1. _install_numpy_json_patch:    让 stdlib json 能序列化 numpy 类型
   2. _install_validation_partial_dump_patch: 替换 RayPPOTrainer._validate，
      在每个 validation batch 完成后增量写 partial_0.jsonl
+
+注意：per-assistant-turn generation budget 和 OJ terminal stop 必须运行在
+AgentLoopWorker Ray actor 中，已迁移到 src.verl_agent_loop.CodeAgentToolAgentLoop。
+不要在这里 monkey patch ToolAgentLoop；TaskRunner actor 的类补丁不会自动进入
+独立的 AgentLoopWorker 进程。
 """
 
 from __future__ import annotations
@@ -379,45 +384,6 @@ def _install_validation_partial_dump_patch() -> None:
     RayPPOTrainer._code_agent_partial_dump = True
 
 
-def _install_tool_agent_terminal_patch() -> None:
-    """Terminate verl ToolAgentLoop after OJ tools mark a trajectory terminal."""
-    from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
-
-    if getattr(ToolAgentLoop, "_code_agent_terminal_stop", False):
-        return
-
-    original_call_tool = ToolAgentLoop._call_tool
-    original_handle_processing_tools_state = ToolAgentLoop._handle_processing_tools_state
-
-    async def call_tool_with_terminal_flag(self, tool_call, tools_kwargs, agent_data):
-        tool_response, tool_reward, result = await original_call_tool(
-            self,
-            tool_call,
-            tools_kwargs,
-            agent_data,
-        )
-        if isinstance(result, dict) and result.get("terminal"):
-            setattr(agent_data, "code_agent_terminal", True)
-            setattr(
-                agent_data,
-                "code_agent_terminal_reason",
-                result.get("terminal_reason") or "tool_terminal",
-            )
-        return tool_response, tool_reward, result
-
-    async def handle_processing_tools_state_with_terminal(self, agent_data):
-        state = await original_handle_processing_tools_state(self, agent_data)
-        if getattr(agent_data, "code_agent_terminal", False):
-            return AgentState.TERMINATED
-        return state
-
-    ToolAgentLoop._call_tool = call_tool_with_terminal_flag
-    ToolAgentLoop._handle_processing_tools_state = (
-        handle_processing_tools_state_with_terminal
-    )
-    ToolAgentLoop._code_agent_terminal_stop = True
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统一入口
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -440,7 +406,6 @@ def apply_patches() -> None:
         return
 
     _install_numpy_json_patch()
-    _install_tool_agent_terminal_patch()
     _install_validation_partial_dump_patch()
     _PATCHED = True
     print("[code-agent] verl runtime patches enabled")

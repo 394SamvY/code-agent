@@ -1,0 +1,19 @@
+==== eval generation summary ====
+samples: 32
+score_mean: 0.2814
+accepted_rate: 28.1%
+zero_score_rate: 62.5%
+unclosed_think_rate: 53.1%
+num_tool_calls_zero_rate: 31.2%
+submit_sample_rate: 68.8%
+avg_tool_calls: 9.47
+max_tool_calls: 35
+avg_output_chars: 20302
+p50_output_chars: 25682
+max_output_chars: 39415
+accepted_tail_avg_chars: 557
+accepted_tail_max_chars: 2695
+
+==== gpu summary ====
+gpu 0: max_mem=75.8GB avg_util=65.0% avg_active_util=76.7% duration=486s active=406s sec_per_sample=15.2 samples=227
+gpu 1: max_mem=75.5GB avg_util=71.4% avg_active_util=83.6% duration=486s active=406s sec_per_sample=15.2 samples=227

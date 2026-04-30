@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import traceback
 from typing import Any
 
@@ -37,6 +38,14 @@ from verl.utils.tokenizer import normalize_token_ids
 
 
 logger = logging.getLogger(__name__)
+
+_SHORT_THINKING_DIRECTIVE = (
+    "Evaluation-time constraint: keep private reasoning brief and action-oriented. "
+    "In the first assistant turn, use at most a few concise lines of thinking, "
+    "then close the thinking block and call run_public_tests or submit_solution "
+    "with a complete Python program. Do not spend the response budget on long "
+    "case-by-case derivations before making an OJ tool call."
+)
 
 
 def _json_load_if_str(value: Any, *, field_name: str) -> Any:
@@ -54,6 +63,56 @@ def _json_load_if_str(value: Any, *, field_name: str) -> Any:
             "Failed to decode JSON field %s; keeping raw string", field_name
         )
         return value
+
+
+def _prompt_style() -> str:
+    """Return the optional eval prompt style selected by environment variable.
+
+    这个 adapter 在 train/eval 读取 parquet 时都会被调用，所以 prompt style
+    必须默认关闭。只有脚本显式设置 CODE_AGENT_PROMPT_STYLE=short_thinking 时，
+    才会动态改 prompt；parquet 文件本身不变。
+    """
+    return os.getenv("CODE_AGENT_PROMPT_STYLE", "").strip().lower().replace("-", "_")
+
+
+def _apply_short_thinking_prompt(prompt: Any) -> Any:
+    """Append a short-thinking instruction to the system prompt when enabled.
+
+    这是 soft control：它告诉 Qwen3 “短思考后尽早调用 OJ tool”。
+    真正的 hard cap 在 src.verl_agent_loop.CodeAgentToolAgentLoop 里，通过
+    CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET /
+    CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET 改 sampling_params.max_new_tokens。
+
+    两者配合的原因：
+      - 只靠 prompt：模型可能仍然无限推导，无法保证不吃满 8192。
+      - 只靠 hard cap：能省 token，但不会主动提高 tool call 意愿。
+      - prompt + cap：既引导它早点出工具，也防止失败样本消耗完整 response budget。
+    """
+    if _prompt_style() not in {"short_thinking", "brief_thinking", "tool_first"}:
+        return prompt
+    if not isinstance(prompt, list) or not prompt:
+        return prompt
+
+    # 拷贝 message dict，避免直接修改 HuggingFace dataset 内部缓存行。
+    # 这里不 deep copy 大字段，因为我们只改第一条 system message 的 content。
+    messages = [dict(message) if isinstance(message, dict) else message for message in prompt]
+    first = messages[0]
+
+    # 当前 build_agentic_messages() 固定是 system + user。
+    # 如果未来某些数据没有 system prompt，就不强行插入，避免改动非本项目格式。
+    if not isinstance(first, dict) or first.get("role") != "system":
+        return messages
+
+    content = first.get("content", "")
+    if not isinstance(content, str):
+        return messages
+    if _SHORT_THINKING_DIRECTIVE in content:
+        return messages
+
+    # 追加到已有 system prompt 后面，而不是替换原 prompt。
+    # 这样不会改变两工具协议、OJ 规则、Python stdin/stdout 要求等核心指令。
+    first["content"] = content.rstrip() + "\n\n" + _SHORT_THINKING_DIRECTIVE
+    return messages
 
 
 class OJLikeRLHFDataset(RLHFDataset):
@@ -87,6 +146,12 @@ class OJLikeRLHFDataset(RLHFDataset):
                     row_dict[field_name],
                     field_name=field_name,
                 )
+        if "prompt" in row_dict:
+            # prompt decode 后才可能是 list[dict]，所以 short-thinking prompt
+            # 必须放在这里，而不是对 parquet JSON string 做字符串拼接。
+            # 这也保证 token length 过滤、__getitem__ rollout prompt 构造都看到
+            # 同一份动态 prompt。
+            row_dict["prompt"] = _apply_short_thinking_prompt(row_dict["prompt"])
         return row_dict
 
     # ── 覆盖父类方法 ──────────────────────────────────────────────

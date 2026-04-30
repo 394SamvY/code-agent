@@ -225,18 +225,19 @@ output = self._postprocess(outputs, input_non_tensor_batch=batch.non_tensor_batc
 目标：
 
 - 理解一个 `AgentLoopWorker` 内部还会并发跑 chunk 内多条样本。
-- 理解 `agent_name` 决定走 `single_turn_agent` 还是 `tool_agent`。
+- 理解 `agent_name` 决定走 `single_turn_agent`、verl 原生 `tool_agent`，还是本项目注册的 `code_agent_tool_agent`。
 - 理解 `_agent_loop_postprocess` 会把单样本输出 pad 成 tensor。
 - 理解 `_postprocess` 会把同一 worker 内多条样本 `torch.cat` 成 batch。
 
 当前必须注意：
 
 - verl 默认 `actor_rollout_ref.rollout.agent.default_agent_loop=single_turn_agent`。
-- 本项目 baseline 必须显式设为 `tool_agent`，否则不会真正调用 OJ tools。
+- 本项目 baseline 必须显式设为 `code_agent_tool_agent`，否则不会启用 AgentLoopWorker 内的 OJ terminal stop 和 assistant turn budget。
 - `scripts/evaluate_baseline_with_verl.sh` 已显式覆盖：
 
 ```text
-actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent
+actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent
+actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl/code_agent_loop.yaml
 ```
 
 ### 7. 最后读 ToolAgentLoop.run
@@ -343,7 +344,8 @@ trainer.val_before_train=True
 actor_rollout_ref.rollout.name=sglang
 actor_rollout_ref.rollout.multi_turn.enable=true
 actor_rollout_ref.rollout.multi_turn.tool_config_path=configs/verl/tool_config.yaml
-actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent
+actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent
+actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl/code_agent_loop.yaml
 data.custom_cls.path=src/verl_dataset_adapter.py
 data.custom_cls.name=OJLikeRLHFDataset
 reward.custom_reward_function.path=src/reward.py
@@ -441,4 +443,3 @@ AgentLoopManager.generate_sequences()
 6. `ToolAgentLoop._handle_processing_tools_state` 如何把 tool response 编码回 token。
 7. `_agent_loop_postprocess` 如何构造 `prompts/responses/response_mask/input_ids/attention_mask/position_ids`。
 8. `_postprocess` 和 `DataProto.concat` 为什么要求 tensor 宽度一致。
-

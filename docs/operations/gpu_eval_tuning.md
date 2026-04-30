@@ -151,3 +151,56 @@ MAX_NUM_BATCHED_TOKENS=32768
 
 Next tuning priority is reducing overlong thinking and truncating text generated
 after a tool call in the same assistant turn, not pushing memory closer to 80GB.
+
+## 2026-04-30 Short-Thinking Probe
+
+The main eval waste was Qwen3 staying inside an unclosed `<think>` block until it
+used the full `MAX_RESPONSE_LENGTH=8192`. The current focused debug script is:
+
+```bash
+bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
+```
+
+It keeps `enable_thinking=true` and `MAX_RESPONSE_LENGTH=8192`, but adds:
+
+```bash
+CODE_AGENT_PROMPT_STYLE=short_thinking
+CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072
+CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048
+```
+
+The token budgets cap each assistant generation turn, not the whole trajectory.
+This lets useful multi-turn repair still use the full response budget, while
+long first-turn thinking failures stop around 3072 tokens instead of 8192 and
+post-tool repair turns are nudged down to 2048 tokens.
+
+Latest 32-sample result:
+
+| Run | GPU memory | Key concurrency | seconds/sample | Accepted | no-tool rate | Avg output chars |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| `smoke_sampling_t06_topk20_vbs16_32_v3` | 67.5GB | `16/16/32` | ~12.3s | 18.8% | 78.1% | 28,192 |
+| `debug32_shortthink_tb3072_v1` | 66.0GB | `16/16/32` | 13.3s | 31.2% | 31.2% | 18,220 |
+| `debug32_shortthink_tb3072_mem094_v1` | 75.8GB | `24/24/48` | 15.2s | 28.1% | 31.2% | 20,302 |
+
+Important correction: the early `tb3072` runs used a TaskRunner-side monkey
+patch, and the later 499-sample debug run showed that hard budget and terminal
+stop did not reach the actual `AgentLoopWorker` processes. The current
+implementation uses `src.verl_agent_loop.CodeAgentToolAgentLoop` registered via
+`configs/verl/code_agent_loop.yaml`; rerun a 32-sample smoke before treating
+any full eval as baseline.
+
+Current default recommendation remains the 67GB profile:
+
+```bash
+VAL_BATCH_SIZE=16
+AGENT_WORKERS=16
+MAX_NUM_SEQS=32
+GPU_MEMORY_UTILIZATION=0.82
+MAX_NUM_BATCHED_TOKENS=32768
+CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072
+CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048
+```
+
+The 77GB profile fills memory but is slower on the latest 32-sample smoke. The
+next useful eval tuning is budget/prompt behavior and malformed tool calls, not
+raising `GPU_MEMORY_UTILIZATION` further.

@@ -1,6 +1,6 @@
 # 项目状态与交接
 
-更新日期：2026-04-29
+更新日期：2026-04-30
 
 本文是当前项目进度和下一步工作的统一入口。长期协议、schema 和实现规范仍分别维护在对应 source-of-truth 文档中；本文只同步当前阶段、验证状态、未完成事项和交接信息。
 
@@ -40,6 +40,7 @@
 | 主训练路径保持 RL-only，不恢复 SFT 主线 | `docs/decisions/2026-04-29-rl-only.md` |
 | 环境采用 OJ-like 两工具协议：`run_public_tests` / `submit_solution` | `docs/decisions/2026-04-29-oj-like-two-tool-protocol.md` |
 | baseline 评测复用 verl validation 路径 | `docs/decisions/2026-04-29-verl-validation-baseline.md` |
+| baseline eval 增加 short-thinking prompt 与 per-assistant-turn token budget | `docs/decisions/2026-04-30-eval-time-thinking-budget.md` |
 
 ## 当前工作状态
 
@@ -49,12 +50,14 @@
 | --- | --- |
 | `src/env/tools.py` | judge 遇到首个失败 case 即停；public tests 增加 15 次调用上限；observation 只保留首个失败并裁剪。 |
 | `src/env/code_env.py` | 本地环境同步 `max_public_test_calls` 状态，便捷接口复用 tool executor。 |
-| `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略；通过 `agent_data.extra_fields` 持久化 trajectory-level public/submission 计数，并在 accepted / submit 次数耗尽时标记 terminal。 |
+| `src/verl_tools/oj_tools.py` | verl BaseTool instance state 同步 public call cap 与首错 observation 策略；通过 `agent_data.code_agent_oj_tool_state` 持久化 trajectory-level public/submission 计数，并在 accepted / submit 次数耗尽时标记 terminal。 |
 | `src/trajectory_parser.py` / `scripts/parse_verl_generations.py` | 将 verl decoded `output` 转为标准 HuggingFace/OpenAI `messages` 格式，支持在线落盘和离线补 `messages` jsonl。 |
-| `src/verl_runtime_patch.py` | partial / final validation generation dump 增加标准 `messages` 字段；patch `ToolAgentLoop` 在 OJ tool 标记 terminal 后结束当前 trajectory。 |
-| `src/verl_dataset_adapter.py` | 修正 JSON-string prompt 过滤路径：`filter_overlong_prompts=true` 时先 decode，再按真实 chat template token 长度过滤。 |
+| `src/verl_runtime_patch.py` | TaskRunner 侧 patch：partial / final validation generation dump 增加标准 `messages` 字段；不再在这里 patch `ToolAgentLoop`。 |
+| `src/verl_agent_loop.py` / `configs/verl/code_agent_loop.yaml` | AgentLoopWorker 侧自定义 `CodeAgentToolAgentLoop`：实现 first/followup assistant turn token budget，并在 OJ tool 标记 terminal 后结束当前 trajectory。 |
+| `src/verl_dataset_adapter.py` | 修正 JSON-string prompt 过滤路径：`filter_overlong_prompts=true` 时先 decode，再按真实 chat template token 长度过滤；支持 eval-time short-thinking prompt 约束。 |
 | `src/data/verl_dataset.py` | 新导出的 parquet tool create kwargs 带 `max_public_test_calls`；旧 parquet 仍走默认值。 |
-| `scripts/evaluate_baseline_with_verl.sh` | 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`；validation sampling 默认 `temperature=0.6`、`top_p=0.95`、`top_k=20`、`do_sample=true`，并把 tool schema 传给 dataset 过滤。 |
+| `scripts/evaluate_baseline_with_verl.sh` | 默认面向 2xA800-80GB：未指定 `CUDA_VISIBLE_DEVICES` 时使用 `0,1`，`VAL_MAX_SAMPLES=500`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`、`CODE_AGENT_PROMPT_STYLE=short_thinking`、first/followup budget `3072/2048`；使用 `code_agent_tool_agent`，仍默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`enable_thinking=true`。 |
+| `scripts/evaluate_2xa800_32_debug.sh` / `scripts/analyze_eval_generations.py` | 新增 2xA800 32-sample focused eval 脚本，自动开 GPU monitor，默认启用 short-thinking prompt 和 per-assistant-turn token budget，并输出行为/GPU summary。 |
 | `tests/test_verl_tools.py` / `tests/test_e2e_protocol.py` / `tests/test_oj_verl_tools_state.py` / `tests/test_verl_dataset_adapter.py` | 覆盖首错即停、public cap 不消耗 submit 次数、create kwargs 导出、verl create/release 后计数持久化、accepted terminal 标记、JSON prompt decode 过滤。 |
 | `AGENTS.md` / `README.md` / `docs/*` | 同步当前协议、reward 口径和交接状态。 |
 
@@ -64,7 +67,7 @@
 
 - `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 修正了 2026-04-25 对 batch shape mismatch 的早期判断：关键问题在于 Parquet `prompt` 是 JSON string，默认 `RLHFDataset.maybe_filter_out_long_prompts` 低估真实 chat template token 长度。
 - 不应使用 `sitecustomize.py` 或全局启动钩子提前 import verl/torch；这会干扰 Ray GPU worker 的 CUDA 绑定，可能触发 NCCL `Duplicate GPU detected`。
-- 当前 patch 安装点应在 `scripts/verl_main_wrapper.py` 的 `CodeAgentTaskRunner.run()` 内，即 Ray CPU TaskRunner actor 中。
+- TaskRunner 侧 patch 安装点应在 `scripts/verl_main_wrapper.py` 的 `CodeAgentTaskRunner.run()` 内，即 Ray CPU TaskRunner actor 中；AgentLoopWorker 侧行为应通过 `configs/verl/code_agent_loop.yaml` 注册自定义 agent loop，不依赖 TaskRunner monkey patch。
 - validation 需要增量落盘：`src/verl_runtime_patch.py` patch `RayPPOTrainer._validate`，每个 validation batch 完成后追加写 `generations/partial_0.jsonl`。
 - 默认评测不再维护“两张卡各跑一个 verl 进程”的 sharded fallback；应通过单个 verl 进程统一调度多卡。
 
@@ -253,6 +256,136 @@ outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
 
 `verl_eval.log` 没有记录按时间采样的 GPU 利用率，只能看到本次配置 `gpu_memory_utilization=0.55`；下一次 focused smoke 应显式并行跑 `scripts/monitor_gpu.sh` 或等价 `nvidia-smi` 采样。
 
+### 2026-04-30 short-thinking eval debug
+
+本轮新增两个 eval-time 控制，用于解决 Qwen3 thinking 过长耗尽 `MAX_RESPONSE_LENGTH=8192` 的问题：
+
+- `CODE_AGENT_PROMPT_STYLE=short_thinking`：在 dataset adapter decode 现有 parquet prompt 后，对 system prompt 追加“短思考、尽早调用 OJ tool”的评测约束。不需要重新导出 parquet。
+- `CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072` / `CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048`：在 `src.verl_agent_loop.CodeAgentToolAgentLoop` 中给 first/followup assistant generation turn 设置 `max_new_tokens` 上限，但保留整条 trajectory 的 `MAX_RESPONSE_LENGTH=8192`。该逻辑运行在 verl `AgentLoopWorker` 进程内。
+
+新增 focused 脚本：
+
+```bash
+bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
+```
+
+默认参数为 2xA800 67GB 档位：`VAL_MAX_SAMPLES=32`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`、first/followup budget `3072/2048`。
+
+#### 32-sample short-thinking smoke：67GB 默认档
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/debug32_shortthink_tb3072_v1
+```
+
+`partial_0.jsonl` 和 `0.jsonl` 均写出 32 条，没有 OOM 或 shape mismatch。
+
+| 指标 | 数值 |
+|---|---:|
+| 样本数 | 32 |
+| score mean | 0.3126 |
+| accepted rate | 31.2% |
+| `unclosed_think_rate` | 50.0% |
+| `num_tool_calls = 0` | 31.2% |
+| submit sample rate | 68.8% |
+| 平均输出长度 | 18,220 字符 |
+| 平均 tool calls | 8.78 |
+| accepted 后额外输出平均 / max | 818 / 3,105 字符 |
+| GPU max memory | 65.8GB / 66.0GB |
+| GPU avg active util | 82.2% / 76.2% |
+| 总 wall-clock 估算 | 426s，约 13.3s/题 |
+
+对比上一轮 `smoke_sampling_t06_topk20_vbs16_32_v3`：
+
+| 指标 | 旧 67GB | short-thinking 67GB |
+|---|---:|---:|
+| accepted rate | 18.8% | 31.2% |
+| `unclosed_think_rate` | 78.1% | 50.0% |
+| `num_tool_calls = 0` | 78.1% | 31.2% |
+| submit sample rate | 21.9% | 68.8% |
+| 平均输出长度 | 28,192 字符 | 18,220 字符 |
+| accepted 后额外输出平均 | 2,882 字符 | 818 字符 |
+
+结论：short-thinking prompt + per-turn budget 明显缓解了“第一轮长思考不调用工具”的主问题。它没有关闭 thinking，也没有缩小整条 trajectory 的 8192 budget；它只是防止单个 assistant turn 把 8192 全吃完。
+
+#### 32-sample short-thinking smoke：77GB 高显存档
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/debug32_shortthink_tb3072_mem094_v1
+```
+
+命令关键参数：`GPU_MEMORY_UTILIZATION=0.94`、`VAL_BATCH_SIZE=24`、`AGENT_WORKERS=24`、`MAX_NUM_SEQS=48`、`MAX_NUM_BATCHED_TOKENS=49152`。本轮同样完整写出 32 条，没有 OOM 或 shape mismatch。
+
+| 指标 | 数值 |
+|---|---:|
+| score mean | 0.2814 |
+| accepted rate | 28.1% |
+| `unclosed_think_rate` | 53.1% |
+| `num_tool_calls = 0` | 31.2% |
+| submit sample rate | 68.8% |
+| 平均输出长度 | 20,302 字符 |
+| 平均 tool calls | 9.47 |
+| GPU max memory | 75.8GB / 75.5GB |
+| GPU avg active util | 76.7% / 83.6% |
+| 总 wall-clock 估算 | 486s，约 15.2s/题 |
+
+结论：77GB 档确实能把显存推到约 75-76GB，但在 short-thinking 行为下仍未比 67GB 档更快，且指标略差。当前默认仍建议 67GB 档位；77GB 档只保留为 probe override，不作为 baseline eval 默认。
+
+#### 500-sample debug run 暴露的问题
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/codecontests_test_500_shortthink_tb3072
+```
+
+该 run 写出 499 条 `0.jsonl`，但不作为正式 baseline。最终统计为 `score_mean=0.1940`、`accepted_rate=19.2%`、`num_tool_calls_zero_rate=26.3%`、`avg_tool_calls=13.92`、`max_tool_calls=131`、`num_turns max=264`。离线 tokenizer 检查显示 no-tool 样本仍有 74 条生成到 8192 tokens，说明旧的 hard budget monkey patch 没有进入真正执行样本的 `AgentLoopWorker` 进程；`submission_limit_exceeded` 后反复 submit 也说明 terminal stop 同样没有进入 AgentLoopWorker。
+
+当前修复方向已经改为自定义 agent loop：`src.verl_agent_loop.CodeAgentToolAgentLoop` 通过 `configs/verl/code_agent_loop.yaml` 注册，并由 eval 脚本设置 `actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent`。下一次 32 条 smoke 的核心验收是 no-tool 最大 token 接近 first budget 3072，而不是 8192，并且 `max_tool_calls` 不再出现 50/100+。
+
+#### 32-sample custom agent loop 验证
+
+输出目录：
+
+```text
+outputs/verl_baseline_eval/debug32_code_agent_loop_f3072_u2048_verify_v2
+```
+
+命令关键参数：`VAL_MAX_SAMPLES=32`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`、`CODE_AGENT_PROMPT_STYLE=short_thinking`、first/followup budget `3072/2048`。本轮完整写出 `generations/0.jsonl`，没有 OOM 或 shape mismatch。
+
+第一轮实跑 `debug32_code_agent_loop_f3072_u2048_verify` 失败在 `DataProto.concat(outputs)`：只给 terminal 样本写 `agent_data.extra_fields["code_agent_terminal_reason"]` 会造成不同样本的 `non_tensor_batch` key 不一致。修复后不再向 `extra_fields` 写动态 terminal 字段，只把 terminal 标记放在普通 `agent_data` 属性和 metrics 中。
+
+| 指标 | 数值 |
+|---|---:|
+| 样本数 | 32 |
+| score mean | 0.2237 |
+| accepted rate | 21.9% |
+| `unclosed_think_rate` | 78.1% |
+| `num_tool_calls = 0` | 34.4% |
+| submit sample rate | 65.6% |
+| 平均输出长度 | 9,079 字符 |
+| 平均 tool calls | 5.75 |
+| max tool calls | 21 |
+| num_turns max / mean | 43 / 12.875 |
+| GPU max memory | 65.8GB / 66.2GB |
+| GPU avg active util | 65.5% / 52.6% |
+| 总 wall-clock 估算 | 303s，约 9.5s/题 |
+
+tokenizer 级验收：
+
+| 检查项 | 数值 |
+|---|---:|
+| no-tool 样本数 | 11 |
+| no-tool 最大 output tokens | 3072 |
+| 第一段 assistant 最大 tokens | 3072 |
+| 第一段达到 8192 的样本数 | 0 |
+| max tool calls | 21 |
+
+结论：`CodeAgentToolAgentLoop` 已经在真实 verl `AgentLoopWorker` eval 路径中生效。旧 500-sample debug run 中 no-tool 样本顶满 8192、`max_tool_calls=131`、`num_turns max=264` 的现象，在这次 32 条实跑中没有复现。下一步可以用同一配置跑 500 条 CodeContests held-out eval。
+
 ## 验证状态
 
 最近记录在 `docs/debug/verl_baseline_eval_debug_2026-04-28.md` 的验证：
@@ -263,6 +396,7 @@ outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
 - 2026-04-29 1GPU structured output smoke 通过：`smoke_structured_output_20260429_185821`，`VAL_MAX_SAMPLES=2`，`partial_0.jsonl` 和 `0.jsonl` 均写出 2 条。该历史 run 使用过旧的自定义结构字段；当前新输出只保留标准 `messages`。
 - 2026-04-29 2xA800 67GB focused smoke 通过：`smoke_sampling_t06_topk20_vbs16_32_v3`，32 条完整写出，无 shape mismatch，无 `structured_output`。
 - 2026-04-29 2xA800 77GB probe 通过：`smoke_sampling_t06_topk20_vbs24_32_mem094`，32 条完整写出，无 OOM、无 shape mismatch；但比 67GB 配置更慢，暂不建议作为默认。
+- 2026-04-30 2xA800 custom agent loop focused eval 通过：`debug32_code_agent_loop_f3072_u2048_verify_v2`，32 条完整写出；tokenizer 检查显示 no-tool 最大 output tokens 为 3072，第一段 assistant 没有样本达到 8192。
 
 2026-04-29 对 `codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713` 做了离线输出分析。随后分析了 `smoke_structured_2gpu_`，该 run 已完成 264 条 partial generation，但最终因 `DataProto.concat` shape mismatch 中断，没有写出最终 `0.jsonl`。任何“当前代码已完全通过正式 baseline”或“效率问题已解决”的表述都应等下一次真实 A800 smoke / full eval 后再写入。
 
@@ -274,13 +408,13 @@ outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
 
 1. `max_public_test_calls=15`、首错即停、首错 observation、eval thinking 和 Qwen3 thinking validation sampling 默认值已实现；下一步用该配置重跑 focused smoke，并保持 `enable_thinking=true`。
 2. (P2) 重复代码短路暂不实现，除非 smoke 仍显示重复 judge 是主要瓶颈。
-3. accepted terminal 语义已部分修复：`submit_solution` accepted 后不再继续下一轮 tool submit，`max_submit_calls_messages=1`；但同一轮 assistant generation 在 `<tool_call>` 后的尾部文本仍会落入输出，accepted 后额外输出还不是 0。下一步应截断 tool_call 后尾部 token 或先在 messages dump 层裁剪。
+3. accepted / submission-limit terminal 语义已迁移到 `CodeAgentToolAgentLoop`，32 条真实 eval 已验证没有再出现 50/100+ tool-call 循环；同一轮 assistant generation 在 `<tool_call>` 后的尾部文本仍会落入输出，accepted 后额外输出还不是 0。下一步可再评估 tool_call 后尾部 token 裁剪。
 4. verl tool state 持久化已验证：`max_public_test_calls` 和 `max_submissions` 在同一道题的一条 trajectory 内通过 `agent_data.code_agent_oj_tool_state` 跨 tool call 累计；不要使用 `extra_fields` 保存该 state。
 5. (P5) 多轮交互输出格式已补标准 `messages` 格式（`role: user/assistant/tool` + `tool_calls` + `tool_call_id`）；在线和离线 jsonl 都不再输出自定义 `structured_output` 字段。`src/trajectory_parser.py` 只保留 `to_messages()` 作为标准 messages 转换入口。
 
 ### Phase 2：budget 暂不动
 
-6. baseline eval 默认保持 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`，暂不下调整条 trajectory response budget。当前先通过 validation sampling 超参减少过长 thinking；如果 focused smoke 仍显示 `<think>` 大量未闭合，再设计 custom agent loop 的 per-thinking budget / early-stopping prompt。
+6. baseline eval 默认保持 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`，暂不下调整条 trajectory response budget。当前通过 custom agent loop 控制 first/followup assistant turn budget，而不是缩短整条 trajectory。
 
 ### Phase 3：验证与评测
 
@@ -289,9 +423,9 @@ outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
    - public/private judge 遇到首个失败 case 即停止
    - `max_public_test_calls` 不破坏 `max_submissions=5` 语义
    - verl parquet `create_kwargs` 携带 public call cap
-9. 训练服务器 focused smoke 已完成两轮 32 条；下一步先处理 accepted 后 tool_call 尾部截断和 thinking 过长，再决定是否跑 `VAL_MAX_SAMPLES=500`。
-10. 当前推荐并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`。77GB probe 虽稳定但更慢，暂不作为默认。
-11. CodeContests held-out baseline：`VAL_MAX_SAMPLES=500`，建议在 accepted 尾部截断修复后再跑。
+9. `scripts/evaluate_2xa800_32_debug.sh` 已验证 custom agent loop 生效；no-tool 最大 token 为 3072，第一段 assistant 没有达到 8192，`max_tool_calls=21`。
+10. 当前推荐并发参数：`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`、first/followup budget `3072/2048`、`CODE_AGENT_PROMPT_STYLE=short_thinking`。77GB probe 虽稳定但更慢，暂不作为默认。
+11. CodeContests held-out baseline：下一步用当前默认配置跑 `VAL_MAX_SAMPLES=500`。
 12. `livecodebench_test`。
 13. 结果同步回本文。
 

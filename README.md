@@ -148,11 +148,12 @@ python3 -m src.data.verl_dataset \
 python3 -m src.env.tools
 ```
 
-baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；默认使用所有可见 GPU，
+baseline 评测入口。一次只测一个 parquet，不会自动重新生成数据；未显式指定 GPU 时默认使用 `0,1`，
 并通过单个 verl 进程统一调度多卡 SGLang server：
 
 ```bash
 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+bash scripts/evaluate_baseline_with_verl.sh codecontests_test.parquet
 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 ```
 
@@ -161,12 +162,15 @@ bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 ```bash
 VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
+bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
 ```
 
 说明：
 
-- `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，默认使用所有可见 GPU
-- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=8`、`AGENT_WORKERS=8`、`LOG_VAL_GENERATIONS=1`，并开启 `enable_thinking=true`；validation sampling 默认使用 `temperature=0.6`、`top_p=0.95`、`top_k=20`
+- `scripts/evaluate_baseline_with_verl.sh` 是当前 baseline eval 入口，默认模型路径为 `/root/autodl-tmp/models/Qwen3-8B`，未显式指定 `CUDA_VISIBLE_DEVICES` 时默认使用 `0,1`
+- `scripts/evaluate_baseline_with_verl.sh` 默认面向 2xA800-80GB 评测：`VAL_MAX_SAMPLES=500`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`、`MAX_NUM_BATCHED_TOKENS=32768`，并启用 `CODE_AGENT_PROMPT_STYLE=short_thinking`、`CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072`、`CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048`
+- `scripts/evaluate_baseline_with_verl.sh` 默认 `MAX_PROMPT_LENGTH=4096`、`MAX_RESPONSE_LENGTH=8192`、`LOG_VAL_GENERATIONS=1`，并开启 `enable_thinking=true`；validation sampling 默认使用 `temperature=0.6`、`top_p=0.95`、`top_k=20`
+- `scripts/evaluate_2xa800_32_debug.sh` 是当前 2xA800 focused eval 调试入口，默认 `VAL_MAX_SAMPLES=32`、`VAL_BATCH_SIZE=16`、`AGENT_WORKERS=16`、`MAX_NUM_SEQS=32`、`GPU_MEMORY_UTILIZATION=0.82`，并启用 short-thinking prompt 与 first/followup assistant token budget
 - validation 会先增量写 `generations/partial_0.jsonl`，整轮结束后再写 verl 原始的 `generations/0.jsonl`
 - generation jsonl 会附带标准 `messages` 字段；旧文件可用 `python3 scripts/parse_verl_generations.py <jsonl>` 离线补 `messages`
 - 不再维护“两张卡各自启动一个 verl 进程”的分片 fallback；当前评测应通过单个 verl 进程统一调度多卡

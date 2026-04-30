@@ -25,6 +25,7 @@ MODEL_PATH="${2:-/root/autodl-tmp/models/Qwen3-8B}"
 CONFIG_PATH="$PROJECT_DIR/configs/verl"
 CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_DIR/outputs/verl_baseline_eval}"
+DEFAULT_CUDA_VISIBLE_DEVICES="${DEFAULT_CUDA_VISIBLE_DEVICES:-0,1}"
 
 normalize_positive_int() {
     local value="${1:-}"
@@ -39,6 +40,10 @@ normalize_positive_int() {
 detect_cuda_visible_devices() {
     if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
         echo "$CUDA_VISIBLE_DEVICES"
+        return
+    fi
+    if [ -n "$DEFAULT_CUDA_VISIBLE_DEVICES" ]; then
+        echo "$DEFAULT_CUDA_VISIBLE_DEVICES"
         return
     fi
     if command -v nvidia-smi >/dev/null 2>&1; then
@@ -76,22 +81,24 @@ if [ "$VISIBLE_GPU_COUNT" -lt 1 ]; then
     exit 1
 fi
 
+# Current baseline eval defaults target the 2xA800-80GB server.
+# All of these remain overrideable from the shell, e.g. VAL_MAX_SAMPLES=32 ...
 NUM_GPUS="${NUM_GPUS:-$VISIBLE_GPU_COUNT}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-4096}"
 MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-8}"
-VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-16}"
+VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-500}"
 TRUNCATION="${TRUNCATION:-middle}"
 FILTER_OVERLONG_PROMPTS="${FILTER_OVERLONG_PROMPTS:-true}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
-AGENT_WORKERS="${AGENT_WORKERS:-8}"
+AGENT_WORKERS="${AGENT_WORKERS:-16}"
 FSDP_MODEL_DTYPE="${FSDP_MODEL_DTYPE:-bf16}"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.70}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.82}"
 ROLLOUT_TP="${ROLLOUT_TP:-1}"
-MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-16384}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-32768}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-1}"
 TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
@@ -99,6 +106,9 @@ VAL_TEMPERATURE="${VAL_TEMPERATURE:-0.6}"
 VAL_TOP_P="${VAL_TOP_P:-0.95}"
 VAL_TOP_K="${VAL_TOP_K:-20}"
 VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-true}"
+CODE_AGENT_PROMPT_STYLE="${CODE_AGENT_PROMPT_STYLE:-short_thinking}"
+CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET="${CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-3072}"
+CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET="${CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:-2048}"
 
 if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
     echo "[ERROR] NUM_GPUS=$NUM_GPUS exceeds visible GPU count $VISIBLE_GPU_COUNT from CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES_RESOLVED"
@@ -119,6 +129,9 @@ export RAY_DEDUP_LOGS="${RAY_DEDUP_LOGS:-0}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 export RAY_DISABLE_DOCKER_CPU_WARNING="${RAY_DISABLE_DOCKER_CPU_WARNING:-1}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+export CODE_AGENT_PROMPT_STYLE
+export CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET
+export CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET
 
 case "$DATASET_ARG" in
     codecontests_valid)
@@ -134,7 +147,13 @@ case "$DATASET_ARG" in
         DATASET_TAG="livecodebench_test"
         ;;
     *.parquet)
-        VAL_FILE="$DATASET_ARG"
+        if [ -f "$DATASET_ARG" ]; then
+            VAL_FILE="$DATASET_ARG"
+        elif [ -f "$PROJECT_DIR/data/verl/$DATASET_ARG" ]; then
+            VAL_FILE="$PROJECT_DIR/data/verl/$DATASET_ARG"
+        else
+            VAL_FILE="$DATASET_ARG"
+        fi
         DATASET_TAG="$(basename "$DATASET_ARG" .parquet)"
         ;;
     *)
@@ -210,6 +229,9 @@ echo "  val_temperature:      $VAL_TEMPERATURE"
 echo "  val_top_p:            $VAL_TOP_P"
 echo "  val_top_k:            $VAL_TOP_K"
 echo "  val_do_sample:        $VAL_DO_SAMPLE"
+echo "  prompt_style:         ${CODE_AGENT_PROMPT_STYLE:-}"
+echo "  first_turn_budget:    ${CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-}"
+echo "  followup_turn_budget: ${CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:-}"
 echo "  patch_verl:           task_runner"
 echo "  output:               $RUN_DIR"
 echo "  log_file:             $LOG_FILE"
@@ -264,7 +286,8 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
-    actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent \
+    actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent \
+    actor_rollout_ref.rollout.agent.agent_loop_config_path="$PROJECT_DIR/configs/verl/code_agent_loop.yaml" \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.rollout.val_kwargs.temperature="$VAL_TEMPERATURE" \
     actor_rollout_ref.rollout.val_kwargs.top_p="$VAL_TOP_P" \
