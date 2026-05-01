@@ -6,9 +6,7 @@
 
 先验证 eval 环境正确性，再讨论训练路线。
 
-- P0 验收标准见 `docs/specs/eval_acceptance_criteria.md`
-- P0 未通过前，不宣称环境调通，不用指标判断模型能力
-- eval 环境必须干净——不加 thinking budget、不截断、不动态改写 prompt
+- eval 环境必须正确，——不加 thinking budget、不截断、不动态改写 prompt
 - 训练路线（纯 RL、SFT warm-start + RL 等）待 eval 验证通过后再讨论
 
 ## 当前主线
@@ -31,33 +29,25 @@
 - `src/env/tools.py`：public/private judge 首错即停，`run_public_tests` 上限 15 次，`submit_solution` 上限 5 次
 - `src/trajectory_parser.py`：verl decoded output → 标准 `messages` 格式
 
-已删除：
-
-- `src/verl_agent_loop.py`（`CodeAgentToolAgentLoop` 及所有 thinking budget 辅助函数）
-- `configs/verl/code_agent_loop.yaml`（自定义 agent loop 注册）
-- `tests/test_code_agent_loop.py`（仅测已删除的类）
 
 ## 验证状态
 
-本地已验证：
+待验证：
 
 - public/private judge 首错即停
 - `max_public_test_calls` 不消耗 `max_submissions`
-- verl tool state 跨 `create -> execute -> release` 累计
+- `run_public_tests` 和 `submit_solutionstate`  跨 `create -> execute -> release` 累计的正确性
 - accepted / submission-limit 写入 trajectory terminal 标记
 - JSON-string prompt decode 后参与 token 长度过滤
-- verl 原生 `ToolAgentLoop` 通过 `configs/verl/code_agent_loop.yaml` 注册可用（config 已删除，eval 脚本也已移除该引用）
 
-保留的 baseline 参照：
-
-- `outputs/verl_baseline_eval/codecontests_test_Qwen3-8B_mp4096_mr8192_20260428_201713`：原始 baseline，所有 thinking budget 实验之前的参照点
 
 ## 下一步
 
+默认配置通过的话，可以
+
 1. 提 `MAX_RESPONSE_LENGTH` 到 16384，给模型足够 token 预算
 2. 跑 500-sample CodeContests held-out eval（不加任何 thinking budget）
-3. 对输出跑 P0 审计，确认环境语义正确
-4. P0 通过后，正式讨论训练路线
+3. 正式讨论训练路线
 
 ```bash
 MAX_RESPONSE_LENGTH=16384 VAL_MAX_SAMPLES=500 \
