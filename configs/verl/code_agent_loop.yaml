@@ -1,2 +1,0 @@
-- name: code_agent_tool_agent
-  _target_: src.verl_agent_loop.CodeAgentToolAgentLoop

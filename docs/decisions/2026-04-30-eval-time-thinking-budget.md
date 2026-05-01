@@ -1,8 +1,18 @@
-# 决策：为 baseline eval 增加 eval-time thinking budget 控制
+# 决策：为 baseline eval 增加 eval-time thinking budget 控制（已废弃）
 
 日期：2026-04-30
 
-> 2026-05-01 更新：本文中的 soft control（`CODE_AGENT_PROMPT_STYLE=short_thinking`，动态追加 system prompt 约束）已废弃并从运行时移除。当前默认只保留 hard control：`CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072` 与 `CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048`。以下原文保留为历史调试背景。
+> **2026-05-01 废弃**：本文描述的 hard/soft thinking budget 控制已全部移除。
+>
+> 根因是 Qwen3-8B base model 代码 debug 能力不足，thinking 长短是表象。在 eval 侧
+> 加 budget 控制是在修补一个应该由训练解决的问题，导致 eval 环境与训练环境不对等、
+> 代码膨胀、注意力偏离核心验证目标。
+>
+> 正确做法：提 `MAX_RESPONSE_LENGTH` 给足预算，去掉所有 thinking budget，
+> 让 RL 训练教会模型在合适时机结束思考。详细分析和教训见
+> `docs/debug/2026-05-01-thinking-budget-detour.md`。
+>
+> 以下原文保留为历史上下文。
 
 ## 决策
 

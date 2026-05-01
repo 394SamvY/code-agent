@@ -14,10 +14,6 @@ per-worker CUDA visibility.
   2. _install_validation_partial_dump_patch: 替换 RayPPOTrainer._validate，
      在每个 validation batch 完成后增量写 partial_0.jsonl
 
-注意：per-assistant-turn generation budget 和 OJ terminal stop 必须运行在
-AgentLoopWorker Ray actor 中，已迁移到 src.verl_agent_loop.CodeAgentToolAgentLoop。
-不要在这里 monkey patch ToolAgentLoop；TaskRunner actor 的类补丁不会自动进入
-独立的 AgentLoopWorker 进程。
 """
 
 from __future__ import annotations
@@ -39,8 +35,6 @@ _CODE_AGENT_DUMP_ONLY_KEYS = (
     "code_agent_terminal_reason",
     "code_agent_parse_failures",
     "code_agent_tool_tail_chars",
-    "code_agent_thinking_budget_reached",
-    "code_agent_thinking_unclosed",
 )
 
 

@@ -1,30 +1,26 @@
-# Baseline Eval GPU Tuning Notes
+# Baseline Eval GPU 调参记录
 
-Date: 2026-04-29
+日期：2026-04-29
 
-Scope: OJ-like baseline evaluation through `scripts/evaluate_baseline_with_verl.sh`
-on 2xA800 80GB. This note is for validation/eval throughput, not GRPO training
-quality.
+范围：通过 `scripts/evaluate_baseline_with_verl.sh` 在 2xA800 80GB 上运行 OJ-like baseline 评测。本文针对 validation/eval 吞吐，而非 GRPO 训练质量。
 
-## Main Throughput Knobs
+## 主要吞吐调节参数
 
-The most important variables are:
+最重要的变量：
 
-| Variable | Current high-util smoke | Effect |
+| 变量 | 当前高利用 smoke 值 | 作用 |
 | --- | ---: | --- |
-| `GPU_MEMORY_UTILIZATION` | `0.82` | Reserves rollout-engine GPU memory, mainly KV-cache headroom. Higher values allow more concurrent long-context decoding, but do not linearly speed up eval by themselves. |
-| `MAX_NUM_SEQS` | `32` | Max concurrent sequences per rollout server scheduler. If too low, GPUs sit idle even with free memory. |
-| `MAX_NUM_BATCHED_TOKENS` | `32768` | Scheduler token budget for batching prefill/decode work. If too low, it throttles long prompts and long thinking trajectories. |
-| `AGENT_WORKERS` | `16` | Number of async agent-loop workers. This must be high enough to keep rollout servers fed, especially because tool calls and sandbox execution add CPU/wall-clock stalls. |
-| `VAL_BATCH_SIZE` | `16` | Validation dataloader batch size in this patched eval path. It should be large enough to feed `AGENT_WORKERS`; in recent verl logs this is marked deprecated because inference engines self-schedule, but it still controls our validation loop batch granularity. |
-| `MAX_PROMPT_LENGTH` | `4096` | Prompt budget. Higher values increase accepted dataset coverage but consume KV-cache and batching capacity. |
-| `MAX_RESPONSE_LENGTH` | `8192` | Whole trajectory response budget. Long Qwen3 thinking can consume most of this; it strongly affects per-sample runtime and KV-cache pressure. |
-| `MAX_MODEL_LEN` | `12288` | Prompt + response capacity seen by the rollout engine. Must cover `4096 + 8192`. |
-| `NUM_GPUS` / `ROLLOUT_TP` | `2` / `1` | Current eval uses 2 GPUs with rollout tensor parallel size 1, effectively using data-parallel rollout servers. |
+| `GPU_MEMORY_UTILIZATION` | `0.82` | rollout 引擎 GPU 显存预留，主要是 KV-cache 余量。值越高允许更多并发的长上下文解码，但本身不线性提升 eval 速度。 |
+| `MAX_NUM_SEQS` | `32` | 每个 rollout server scheduler 的最大并发序列数。过低则即使有空闲显存，GPU 也会闲置。 |
+| `MAX_NUM_BATCHED_TOKENS` | `32768` | Scheduler 的 batch prefill/decode token 预算。过低会限制长 prompt 和长 thinking trajectory。 |
+| `AGENT_WORKERS` | `16` | 异步 agent-loop worker 数量。必须足够多才能喂饱 rollout server，尤其是 tool call 和沙箱执行会引入 CPU/wall-clock 延迟。 |
+| `VAL_BATCH_SIZE` | `16` | 此 patch 后 eval 路径中的 validation dataloader batch size。需足够大以喂饱 `AGENT_WORKERS`；在近期 verl 日志中标记为 deprecated（因为推理引擎自行调度），但仍控制着 validation 循环的 batch 粒度。 |
+| `MAX_PROMPT_LENGTH` | `4096` | Prompt 预算。更大的值能覆盖更多数据集样本，但消耗 KV-cache 和 batching 容量。 |
+| `MAX_RESPONSE_LENGTH` | `8192` | 整条 trajectory 的 response 预算。Qwen3 长 thinking 会消耗大部分；对单样本耗时和 KV-cache 压力影响很大。 |
+| `MAX_MODEL_LEN` | `12288` | rollout 引擎看到的 prompt + response 容量。必须覆盖 `4096 + 8192`。 |
+| `NUM_GPUS` / `ROLLOUT_TP` | `2` / `1` | 当前 eval 使用 2 GPU，rollout tensor parallel size=1，本质上是数据并行的 rollout server。 |
 
-Sampling variables such as `VAL_TEMPERATURE`, `VAL_TOP_P`, and `VAL_TOP_K` do not
-directly increase GPU utilization. They matter indirectly because they change output
-length, tool-call frequency, and accepted rate. Current Qwen3 thinking smoke uses:
+采样变量如 `VAL_TEMPERATURE`、`VAL_TOP_P`、`VAL_TOP_K` 不直接提高 GPU 利用率。它们通过改变输出长度、tool-call 频率和 accepted rate 间接影响。当前 Qwen3 thinking smoke 使用：
 
 ```bash
 VAL_TEMPERATURE=0.6
@@ -33,10 +29,9 @@ VAL_TOP_K=20
 VAL_DO_SAMPLE=true
 ```
 
-## Current Configurations Compared
+## 已对比的配置
 
-The interrupted `smoke_structured_2gpu_` run completed 264 partial samples before a
-shape mismatch. Its relevant config was:
+中断的 `smoke_structured_2gpu_` 运行在 shape mismatch 前完成了 264 条 partial 样本。相关配置：
 
 ```bash
 VAL_BATCH_SIZE=8
@@ -47,7 +42,7 @@ MAX_PROMPT_LENGTH=4096
 MAX_RESPONSE_LENGTH=8192
 ```
 
-The focused high-util smoke used:
+聚焦的高利用 smoke 使用：
 
 ```bash
 VAL_BATCH_SIZE=16
@@ -59,40 +54,26 @@ MAX_PROMPT_LENGTH=4096
 MAX_RESPONSE_LENGTH=8192
 ```
 
-Observed live GPU memory in the high-util smoke was about `67.4GB` per A800, with
-utilization often in the `90-100%` range during decode-heavy periods.
+高利用 smoke 中观察到的 GPU 实时显存约 `67.4GB`/A800，decode 密集型时段利用率常在 `90-100%`。
 
-## Speedup Estimate
+## 加速预估
 
-Memory moved from roughly `47GB` to `67GB` per GPU, about `1.43x` more resident GPU
-memory. However, eval speed does not scale linearly with memory because:
+显存从约 `47GB` 提升到 `67GB`/GPU，约 `1.43x` 更多驻留显存。但 eval 速度不与显存线性相关，因为：
 
-- A large part of runtime is autoregressive decoding, where token generation is
-  sequential inside each trajectory.
-- Tool calls add CPU sandbox time and agent-loop scheduling overhead.
-- Qwen3 over-thinking creates very long outputs; reducing output length can help more
-  than reserving additional KV cache.
-- `GPU_MEMORY_UTILIZATION` mostly enables more in-flight sequences; it is only useful
-  if `AGENT_WORKERS`, `MAX_NUM_SEQS`, and batch size keep the server fed.
+- 大部分运行时间是自回归解码，每条 trajectory 内部是串行的。
+- Tool call 增加了 CPU 沙箱时间和 agent-loop 调度开销。
+- Qwen3 过度思考产生极长输出；缩短输出长度比预留额外 KV-cache 更有效。
+- `GPU_MEMORY_UTILIZATION` 主要增加并发序列数；只有在 `AGENT_WORKERS`、`MAX_NUM_SEQS` 和 batch size 能喂饱 server 时才有效。
 
-For the old 264-sample run, the practical expected improvement from the high-util
-setting is roughly `1.2x-1.6x`, not `1.43x` guaranteed. Because the new config also
-doubles `AGENT_WORKERS` and `MAX_NUM_SEQS`, it should be closer to the upper side when
-GPU decode is the bottleneck, and closer to the lower side when tool/CPU or very long
-single trajectories dominate.
+对于旧的 264 样本运行，高利用设置的实际预期提升约 `1.2x-1.6x`，不保证达到 `1.43x`。因为新配置同时翻倍了 `AGENT_WORKERS` 和 `MAX_NUM_SEQS`，当 GPU decode 为瓶颈时应接近上限，当工具/CPU 或单条超长 trajectory 主导时应接近下限。
 
-For a full 500-sample eval, use the same estimate: a run that took `T` hours at the
-old 47GB-ish setting would likely take about `T / 1.2` to `T / 1.6` hours at the
-67GB setting, assuming no shape mismatch and similar output lengths.
+对于完整的 500 样本 eval，使用相同的预估：在旧 47GB 档位运行 `T` 小时的任务，在 67GB 档位下大约需要 `T / 1.2` 到 `T / 1.6` 小时，前提是无 shape mismatch 且输出长度相近。
 
-Pushing from `67GB` to about `77GB` is only another `1.15x` memory increase. Expected
-wall-clock improvement is likely smaller, around `1.03x-1.12x`, unless the current
-run is clearly scheduler/KV-cache limited. It also reduces OOM safety margin on 80GB
-A800s, so it should be validated with 32 samples before any 500-sample run.
+从 `67GB` 推到约 `77GB` 只增加 `1.15x` 显存。预期的 wall-clock 改进更小，约 `1.03x-1.12x`，除非当前运行明显受 scheduler/KV-cache 限制。在 80GB A800 上也会减少 OOM 安全余量，因此在任何 500 样本运行前应先 32 样本验证。
 
-## 77GB Probe Plan
+## 77GB 探测计划
 
-Focused 32-sample smoke command:
+聚焦的 32 样本 smoke 命令：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 \
@@ -107,39 +88,34 @@ RUN_NAME=smoke_sampling_t06_topk20_vbs24_32_mem094 \
 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 ```
 
-Watch for:
+关注点：
 
-- OOM or allocator fragmentation during rollout server startup.
-- More stable `90-100%` GPU utilization, not just higher reserved memory.
-- Per-sample runtime improvement versus the 67GB run.
-- Shape mismatch recurrence.
-- Accepted trajectories stopping immediately after `submit_solution: accepted`.
+- rollout server 启动期间的 OOM 或分配器碎片化。
+- 更稳定的 `90-100%` GPU 利用率，而非仅更高的预留显存。
+- 相对于 67GB 运行的每样本耗时改进。
+- Shape mismatch 是否复现。
+- Accepted trajectory 在 `submit_solution: accepted` 后是否立即停止。
 
-If `0.94` is unstable, back off to `GPU_MEMORY_UTILIZATION=0.90` with
-`VAL_BATCH_SIZE=20`, `AGENT_WORKERS=20`, and `MAX_NUM_SEQS=40`.
+如果 `0.94` 不稳定，回退到 `GPU_MEMORY_UTILIZATION=0.90`，配合 `VAL_BATCH_SIZE=20`、`AGENT_WORKERS=20`、`MAX_NUM_SEQS=40`。
 
-## Observed 77GB Probe Result
+## 77GB 探测结果观察
 
-The `0.94` probe completed without OOM or shape mismatch:
+`0.94` 探测无 OOM、无 shape mismatch 完成：
 
 ```text
 outputs/verl_baseline_eval/smoke_sampling_t06_topk20_vbs24_32_mem094
 ```
 
-Comparison against the 67GB smoke:
+与 67GB smoke 的对比：
 
-| Run | GPU memory | Key concurrency | high-memory seconds/sample | Result |
+| 运行 | GPU 显存 | 关键并发参数 | 秒/样本 | 结果 |
 | --- | ---: | --- | ---: | --- |
-| `smoke_sampling_t06_topk20_vbs16_32_v3` | 67.5GB | `16/16/32` | 12.3s | Completed, no shape mismatch |
-| `smoke_sampling_t06_topk20_vbs24_32_mem094` | 77.8GB | `24/24/48` | 14.2s | Completed, no shape mismatch |
+| `smoke_sampling_t06_topk20_vbs16_32_v3` | 67.5GB | `16/16/32` | 12.3s | 完成，无 shape mismatch |
+| `smoke_sampling_t06_topk20_vbs24_32_mem094` | 77.8GB | `24/24/48` | 14.2s | 完成，无 shape mismatch |
 
-The 77GB setting filled memory successfully but was slower on this 32-sample smoke.
-The likely reason is long-tail autoregressive decoding from overlong thinking: once
-the batch is waiting on a small number of very long trajectories, extra KV cache and
-more agent workers do not improve wall-clock time much and may add scheduling
-overhead.
+77GB 设置成功填满显存，但在此 32 样本 smoke 上更慢。可能原因是过度思考导致的长尾自回归解码：一旦 batch 在等待少量超长 trajectory，额外的 KV-cache 和更多的 agent worker 并不能明显改善 wall-clock 时间，反而可能增加调度开销。
 
-Current default recommendation:
+当前默认推荐：
 
 ```bash
 VAL_BATCH_SIZE=16
@@ -149,58 +125,35 @@ GPU_MEMORY_UTILIZATION=0.82
 MAX_NUM_BATCHED_TOKENS=32768
 ```
 
-Next tuning priority is reducing overlong thinking and truncating text generated
-after a tool call in the same assistant turn, not pushing memory closer to 80GB.
+下一步调参优先级是减少过度思考和截断同一 assistant turn 中 tool call 之后的多余文本，而非继续把显存推到接近 80GB。
 
-## 2026-04-30 Short-Thinking Probe
+## 2026-04-30 Short-Thinking 探测
 
-The main eval waste was Qwen3 staying inside an unclosed `<think>` block until it
-used the full `MAX_RESPONSE_LENGTH=8192`. The current focused debug script is:
+> **2026-05-01 更新**：本文描述的 short-thinking 和 per-turn token budget 方案已全部废弃。详细分析见 `docs/debug/2026-05-01-thinking-budget-detour.md`。以下原文保留为历史上下文。
+
+eval 的主要浪费是 Qwen3 在未闭合的 `<think>` 块中一直思考到用完 `MAX_RESPONSE_LENGTH=8192`。当时的 focused debug 脚本为：
 
 ```bash
 bash scripts/evaluate_2xa800_32_debug.sh codecontests_test
 ```
 
-It keeps `enable_thinking=true` and `MAX_RESPONSE_LENGTH=8192`, but adds
-per-assistant-turn hard budgets:
+保持 `enable_thinking=true` 和 `MAX_RESPONSE_LENGTH=8192`，但增加了 per-assistant-turn 硬预算：
 
 ```bash
 CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072
 CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048
 ```
 
-The token budgets cap each assistant generation turn, not the whole trajectory.
-This lets useful multi-turn repair still use the full response budget, while
-long first-turn thinking failures stop around 3072 tokens instead of 8192 and
-post-tool repair turns are nudged down to 2048 tokens.
+token budget 限制每轮 assistant 生成，而非整条 trajectory。这让有用的多轮修复仍能使用完整的 response budget，而超长的首轮 thinking 在约 3072 token 处停止，修复轮被压缩到 2048 token。
 
-Latest 32-sample result:
+当时 32 样本结果：
 
-| Run | GPU memory | Key concurrency | seconds/sample | Accepted | no-tool rate | Avg output chars |
+| 运行 | GPU 显存 | 关键并发 | 秒/样本 | Accepted | no-tool rate | 平均输出字符 |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | `smoke_sampling_t06_topk20_vbs16_32_v3` | 67.5GB | `16/16/32` | ~12.3s | 18.8% | 78.1% | 28,192 |
 | `debug32_shortthink_tb3072_v1` | 66.0GB | `16/16/32` | 13.3s | 31.2% | 31.2% | 18,220 |
 | `debug32_shortthink_tb3072_mem094_v1` | 75.8GB | `24/24/48` | 15.2s | 28.1% | 31.2% | 20,302 |
 
-Important correction: the early `tb3072` runs used a TaskRunner-side monkey
-patch, and the later 499-sample debug run showed that hard budget and terminal
-stop did not reach the actual `AgentLoopWorker` processes. The current
-implementation uses `src.verl_agent_loop.CodeAgentToolAgentLoop` registered via
-`configs/verl/code_agent_loop.yaml`; rerun a 32-sample smoke before treating
-any full eval as baseline.
+重要修正：早期 `tb3072` 运行使用了 TaskRunner 侧的 monkey patch，后续 499 样本 debug run 显示硬预算和 terminal stop 并未进入实际的 `AgentLoopWorker` 进程。这些结果仅作为调试对照，不作为正式 baseline。
 
-Current default recommendation remains the 67GB profile:
-
-```bash
-VAL_BATCH_SIZE=16
-AGENT_WORKERS=16
-MAX_NUM_SEQS=32
-GPU_MEMORY_UTILIZATION=0.82
-MAX_NUM_BATCHED_TOKENS=32768
-CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET=3072
-CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET=2048
-```
-
-The 77GB profile fills memory but is slower on the latest 32-sample smoke. The
-next useful eval tuning is budget/prompt behavior and malformed tool calls, not
-raising `GPU_MEMORY_UTILIZATION` further.
+当时默认推荐保持 67GB 档位；77GB 档位虽然填满显存但在该 32 样本 smoke 中更慢。当时的下一步 eval 调参方向是 budget/prompt 行为和 malformed tool call，而非继续提高 `GPU_MEMORY_UTILIZATION`。

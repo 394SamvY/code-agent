@@ -40,7 +40,6 @@ cp -R skills/project-context-sync ~/.codex/skills/
 
 ## 当前硬约束
 
-- `RL-only`：不要把 SFT 重新引回主训练路径
 - 训练集是 `CodeContests`
 - 最终测试集是 `LiveCodeBench`
 - 项目目标是 OJ-like 环境中的 code agent，而不是函数 benchmark agent

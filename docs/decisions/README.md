@@ -6,7 +6,6 @@
 
 当前决策：
 
-- `2026-04-29-rl-only.md`
 - `2026-04-29-oj-like-two-tool-protocol.md`
 - `2026-04-29-verl-validation-baseline.md`
 - `2026-04-30-eval-time-thinking-budget.md`

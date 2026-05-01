@@ -8,7 +8,7 @@
 
 ## 背景
 
-本项目的第一阶段目标是跑出可复现 baseline，并验证 OJ-like v1 数据、tool、reward 和 verl agent loop 的主链路。为了避免训练和评测分叉，baseline eval 应尽量走训练时同一套 multi-turn agent loop，而不是另写本地 evaluate harness。
+本项目的第一阶段目标是跑出可复现 baseline，并验证 OJ-like v1 数据、tool、reward 和 verl agent loop 的主链路。为了提高评测效率，并尽可能和训练环境保持一致，baseline eval 应尽量复用训练时的 multi-turn agent loop，而不是另写本地 evaluate harness。
 
 2026-04-25 到 2026-04-28 的调试已经确认：
 

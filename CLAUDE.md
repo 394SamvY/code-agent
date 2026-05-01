@@ -23,7 +23,6 @@ Then follow any task-specific documents linked from those files, especially `doc
 
 This is an OJ-like code agent project:
 
-- RL-only; do not add SFT back to the main training path.
 - Training data is `CodeContests`; final test target is `LiveCodeBench`.
 - The environment exposes `run_public_tests` and `submit_solution`.
 - Current baseline work should use `scripts/evaluate_baseline_with_verl.sh` and the verl validation / agent loop path.

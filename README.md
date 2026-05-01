@@ -15,8 +15,7 @@
 
 这是一个以 RL 为核心的项目：
 
-- `RL-only`
-- 不引入 SFT 训练链路
+- 当前不引入 SFT 训练链路，训练路线待 eval 后正式确定
 - 不把 benchmark 专属 prompt trick 当作主策略
 
 ## 数据集策略
@@ -234,6 +233,6 @@ configs/verl/    verl 训练与工具配置
 - `docs/specs/`：稳定协议、schema、接口和数据契约
 - `docs/operations/`：运行、训练、评测、部署和排障手册
 - `docs/references/`：参考资料、源码阅读路线和设计背景
-- `docs/decisions/`：长期决策记录，包括 RL-only、OJ-like 两工具协议和 verl validation baseline 取舍
+- `docs/decisions/`：长期决策记录，包括 OJ-like 两工具协议和 verl validation baseline 取舍
 - `docs/debug/`：调试记录、失败分析和历史 bug 过程
 - `docs/legacy/`：已退出当前主线的大块历史输出、旧实验和旧训练资产

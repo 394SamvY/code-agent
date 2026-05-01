@@ -89,7 +89,7 @@ MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-16}"
-VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-500}"
+VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-1000}"
 TRUNCATION="${TRUNCATION:-middle}"
 FILTER_OVERLONG_PROMPTS="${FILTER_OVERLONG_PROMPTS:-true}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
@@ -106,10 +106,6 @@ VAL_TEMPERATURE="${VAL_TEMPERATURE:-0.6}"
 VAL_TOP_P="${VAL_TOP_P:-0.95}"
 VAL_TOP_K="${VAL_TOP_K:-20}"
 VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-true}"
-CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET="${CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-3072}"
-CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET="${CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:-2048}"
-CODE_AGENT_ENABLE_THINKING_EARLY_STOP="${CODE_AGENT_ENABLE_THINKING_EARLY_STOP:-1}"
-CODE_AGENT_THINKING_TOKEN_BUDGET="${CODE_AGENT_THINKING_TOKEN_BUDGET:-1024}"
 
 if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
     echo "[ERROR] NUM_GPUS=$NUM_GPUS exceeds visible GPU count $VISIBLE_GPU_COUNT from CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES_RESOLVED"
@@ -130,10 +126,6 @@ export RAY_DEDUP_LOGS="${RAY_DEDUP_LOGS:-0}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 export RAY_DISABLE_DOCKER_CPU_WARNING="${RAY_DISABLE_DOCKER_CPU_WARNING:-1}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
-export CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET
-export CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET
-export CODE_AGENT_ENABLE_THINKING_EARLY_STOP
-export CODE_AGENT_THINKING_TOKEN_BUDGET
 
 case "$DATASET_ARG" in
     codecontests_valid)
@@ -204,40 +196,38 @@ if [ "${GENERATE_TOOL_CONFIG:-1}" = "1" ]; then
 fi
 
 echo "==== verl OJ-like baseline eval ===="
+echo ""
+echo "-- 运行环境 --"
 echo "  dataset:              $DATASET_TAG"
-echo "  val_file:             $VAL_FILE"
-echo "  train_stub_file:      $TRAIN_STUB_FILE"
 echo "  model:                $MODEL_PATH"
-echo "  run_name:             $RUN_NAME"
 echo "  cuda_visible_devices: $CUDA_VISIBLE_DEVICES"
-echo "  num_gpus:             $NUM_GPUS"
-echo "  max_prompt_length:    $MAX_PROMPT_LENGTH"
-echo "  max_response_length:  $MAX_RESPONSE_LENGTH"
-echo "  max_model_len:        $MAX_MODEL_LEN"
-echo "  train_batch_size:     $TRAIN_BATCH_SIZE"
-echo "  val_batch_size:       $VAL_BATCH_SIZE"
-echo "  val_max_samples:      $VAL_MAX_SAMPLES"
-echo "  truncation:           $TRUNCATION"
-echo "  filter_overlong:      $FILTER_OVERLONG_PROMPTS"
-echo "  dataloader_workers:   $DATALOADER_NUM_WORKERS"
-echo "  agent_workers:        $AGENT_WORKERS"
-echo "  fsdp_model_dtype:     $FSDP_MODEL_DTYPE"
-echo "  rollout_tp:           $ROLLOUT_TP"
-echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION"
-echo "  max_batched_tokens:   $MAX_NUM_BATCHED_TOKENS"
-echo "  max_num_seqs:         $MAX_NUM_SEQS"
-echo "  enforce_eager:        $ENFORCE_EAGER"
-echo "  val_temperature:      $VAL_TEMPERATURE"
-echo "  val_top_p:            $VAL_TOP_P"
-echo "  val_top_k:            $VAL_TOP_K"
-echo "  val_do_sample:        $VAL_DO_SAMPLE"
-echo "  first_turn_budget:    ${CODE_AGENT_FIRST_ASSISTANT_TURN_TOKEN_BUDGET:-}"
-echo "  followup_turn_budget: ${CODE_AGENT_FOLLOWUP_ASSISTANT_TURN_TOKEN_BUDGET:-}"
-echo "  thinking_early_stop:  ${CODE_AGENT_ENABLE_THINKING_EARLY_STOP:-}"
-echo "  thinking_budget:      ${CODE_AGENT_THINKING_TOKEN_BUDGET:-}"
-echo "  patch_verl:           task_runner"
+echo "  num_gpus:             $NUM_GPUS  (rollout tensor_parallel=$ROLLOUT_TP)"
 echo "  output:               $RUN_DIR"
-echo "  log_file:             $LOG_FILE"
+
+echo ""
+echo "-- 评测策略（常用覆盖）--"
+echo "  val_max_samples:      $VAL_MAX_SAMPLES  (跑多少条，设小值做 smoke test)"
+echo "  max_prompt_length:    $MAX_PROMPT_LENGTH  (首轮 prompt 最大 token 数，超出样本被过滤)"
+echo "  max_response_length:  $MAX_RESPONSE_LENGTH  (整条 trajectory 总 token 预算，含所有轮次)"
+echo "  max_model_len:        $MAX_MODEL_LEN  (prompt+response 总容量，自动=mp+Mr)"
+echo "  val_temperature:      $VAL_TEMPERATURE  (采样温度，0=贪心)"
+echo "  val_top_p:            $VAL_TOP_P  (nucleus sampling)"
+echo "  val_top_k:            $VAL_TOP_K  (top-k sampling)"
+echo "  val_do_sample:        $VAL_DO_SAMPLE  (true=采样, false=贪心解码)"
+
+echo ""
+echo "-- GPU 吞吐（偶尔调）--"
+echo "  gpu_memory_util:      $GPU_MEMORY_UTILIZATION  (SGLang 预留显存比例，越高 KV-cache 越大)"
+echo "  max_num_seqs:         $MAX_NUM_SEQS  (单 GPU 最大并发序列数)"
+echo "  max_batched_tokens:   $MAX_NUM_BATCHED_TOKENS  (单次迭代最多打包多少 token，限制算力峰值)"
+echo "  agent_workers:        $AGENT_WORKERS  (异步 agent loop worker 数)"
+echo "  val_batch_size:       $VAL_BATCH_SIZE  (dataloader 每批取多少条)"
+
+echo "-- 其他 --"
+echo "  val_file:             $VAL_FILE"
+echo "  fsdp_model_dtype:     $FSDP_MODEL_DTYPE"
+echo "  dataloader_workers:   $DATALOADER_NUM_WORKERS"
+echo "  run_name:             $RUN_NAME"
 echo ""
 
 python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
@@ -289,8 +279,6 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
-    actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent \
-    actor_rollout_ref.rollout.agent.agent_loop_config_path="$PROJECT_DIR/configs/verl/code_agent_loop.yaml" \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.rollout.val_kwargs.temperature="$VAL_TEMPERATURE" \
     actor_rollout_ref.rollout.val_kwargs.top_p="$VAL_TOP_P" \
