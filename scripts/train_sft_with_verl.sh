@@ -7,19 +7,12 @@
 #
 # 用法：
 #   bash scripts/train_sft_with_verl.sh
-#   MODEL_PATH=/root/autodl-tmp/models/Qwen3-8B CUDA_VISIBLE_DEVICES=0,1 bash scripts/train_sft_with_verl.sh
-#   bash scripts/train_sft_with_verl.sh /root/autodl-tmp/models/Qwen3-8B /root/autodl-tmp/checkpoints/code-agent-sft
-#
-# 常用覆盖：
-#   TRAIN_BATCH_SIZE=16 MAX_LENGTH=32768 LR=1e-5 bash scripts/train_sft_with_verl.sh
-#   TOTAL_TRAINING_STEPS=20 bash scripts/train_sft_with_verl.sh
 
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-# 留空时使用当前 Python 环境已安装的 verl；只有需要覆盖本地源码版 verl 时才设置 VERL_DIR。
-VERL_DIR="${VERL_DIR:-}"
 
+# 模型位置
 MODEL_PATH="${MODEL_PATH:-/root/autodl-tmp/models/Qwen3-8B}"
 SAVE_PATH="${SAVE_PATH:-}"
 
@@ -43,8 +36,12 @@ VAL_FILE="${VAL_FILE:-$PROJECT_DIR/data/verl/sft/sft_accepted_val.parquet}"
 RUN_NAME="${RUN_NAME:-$(basename "$SAVE_PATH")}"
 LOG_FILE="$SAVE_PATH/train.log"
 
+# 物理 GPU 索引（nvidia-smi 最左列的编号）。CUDA 驱动会把可见 GPU 从 0 开始重映射给应用。
+# 单机：CUDA_VISIBLE_DEVICES=0,1 → 应用内 cuda:0=物理 GPU 0, cuda:1=物理 GPU 1
+# 多机：每台机器各自设置，local_rank 只对应本机可见设备，不存在跨机器引用。
 DEFAULT_CUDA_VISIBLE_DEVICES="${DEFAULT_CUDA_VISIBLE_DEVICES:-0,1}"
 
+# 检测最终可用的 GPU 列表，优先级：用户设置 > 脚本默认 > nvidia-smi 探测 > 兜底 0
 detect_cuda_visible_devices() {
     if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
         echo "$CUDA_VISIBLE_DEVICES"
@@ -65,6 +62,7 @@ detect_cuda_visible_devices() {
     echo "0"
 }
 
+# 统计逗号分隔的设备数量
 count_cuda_devices() {
     local devices="$1"
     if [ -z "$devices" ] || [ "$devices" = "-1" ]; then
@@ -120,8 +118,8 @@ MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-$MAX_LENGTH}"
 # 超长样本处理策略。right 会截断极少数超过 MAX_LENGTH 的长 trajectory，避免默认长跑中途崩掉。
 TRUNCATION="${TRUNCATION:-right}"
 
-# 默认 1 epoch；小数据 warm-start 不建议盲目多 epoch。
-TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
+# 435 条小数据全量微调，2-3 epoch 让模型充分学习工具调用格式；低 LR 降低过拟合风险。
+TOTAL_EPOCHS="${TOTAL_EPOCHS:-3}"
 
 # 设置后覆盖 epoch 推导的 step 数，主要用于 smoke test，例如 TOTAL_TRAINING_STEPS=1。
 TOTAL_TRAINING_STEPS="${TOTAL_TRAINING_STEPS:-}"
@@ -158,12 +156,12 @@ TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-false}"
 USE_REMOVE_PADDING="${USE_REMOVE_PADDING:-true}"
 IGNORE_INPUT_IDS_MISMATCH="${IGNORE_INPUT_IDS_MISMATCH:-true}"
 SAVE_FREQ="${SAVE_FREQ:-after_each_epoch}"
-TEST_FREQ="${TEST_FREQ:-after_each_epoch}"
+# 每 N 步验证一次；27 步/epoch 下 5 步一验可及时发现过拟合。
+TEST_FREQ="${TEST_FREQ:-5}"
 
-# 默认只保存模型权重和 dataloader/step 元信息，不保存 AdamW optimizer state。
-# 全量 8B 的 optimizer checkpoint 很大，当前机器容易因为磁盘满而保存失败。
-CHECKPOINT_SAVE_CONTENTS="${CHECKPOINT_SAVE_CONTENTS:-[model,extra]}"
-CHECKPOINT_LOAD_CONTENTS="${CHECKPOINT_LOAD_CONTENTS:-$CHECKPOINT_SAVE_CONTENTS}"
+# 只保存合并后的 HuggingFace 模型（bf16，8B 约 16GB），不存 FSDP 分片，不需要 resume。
+# CHECKPOINT_LOAD_CONTENTS="${CHECKPOINT_LOAD_CONTENTS:-[model]}"
+CHECKPOINT_SAVE_CONTENTS="${CHECKPOINT_SAVE_CONTENTS:-[hf_model]}"
 
 # 多 epoch 时默认只保留最近一个 checkpoint，避免输出目录持续膨胀。
 MAX_CKPT_TO_KEEP="${MAX_CKPT_TO_KEEP:-1}"
@@ -178,10 +176,6 @@ if [ "$SP_SIZE" -lt 1 ] || [ $((NUM_GPUS % SP_SIZE)) -ne 0 ]; then
     exit 1
 fi
 
-if [ -n "$VERL_DIR" ] && [ ! -d "$VERL_DIR" ]; then
-    echo "[ERROR] VERL_DIR not found: $VERL_DIR"
-    exit 1
-fi
 
 if [ ! -e "$MODEL_PATH" ]; then
     echo "[ERROR] MODEL_PATH not found: $MODEL_PATH"
@@ -205,12 +199,18 @@ if [ -e "$LOG_FILE" ]; then
     exit 1
 fi
 
+# 限制 CUDA 可见设备，torchrun 子进程只能看到这里指定的 GPU
 export CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_RESOLVED"
+# 限制每个进程的 OpenMP 线程数，避免多 GPU 进程同时做 CPU 操作时抢占所有核
 export OMP_NUM_THREADS="$(normalize_positive_int "${OMP_NUM_THREADS:-}" 4)"
+# 允许 HuggingFace tokenizer 多进程并行，加速数据预处理
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-true}"
+# 禁用 torch.compile（dynamo），FSDP + 长序列场景下 JIT 编译兼容性不稳定
 export TORCHDYNAMO_DISABLE="${TORCHDYNAMO_DISABLE:-1}"
+# verl SFT trainer 日志级别：CRITICAL < ERROR < WARNING(verl默认) < INFO(脚本默认) < DEBUG
 export VERL_SFT_LOGGING_LEVEL="${VERL_SFT_LOGGING_LEVEL:-INFO}"
-export PYTHONPATH="$PROJECT_DIR${VERL_DIR:+:$VERL_DIR}${PYTHONPATH:+:$PYTHONPATH}"
+# 把项目目录加入 Python 路径，让 torchrun 能 import 项目自定义模块（如 src/）
+export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 exec > >(tee "$LOG_FILE") 2>&1
 
@@ -218,7 +218,6 @@ echo "==== verl OJ-like multiturn SFT ===="
 echo ""
 echo "-- 路径 --"
 echo "  project_dir:          $PROJECT_DIR"
-echo "  verl_dir:             ${VERL_DIR:-<installed package>}"
 echo "  train_file:           $TRAIN_FILE"
 echo "  val_file:             $VAL_FILE"
 echo "  model_path:           $MODEL_PATH"
@@ -279,7 +278,6 @@ cmd=(
     optim.weight_decay="$WEIGHT_DECAY"
     optim.lr_warmup_steps_ratio="$LR_WARMUP_STEPS_RATIO"
     checkpoint.save_contents="$CHECKPOINT_SAVE_CONTENTS"
-    checkpoint.load_contents="$CHECKPOINT_LOAD_CONTENTS"
     trainer.default_local_dir="$SAVE_PATH"
     trainer.project_name=code-agent-sft
     trainer.experiment_name="$RUN_NAME"
