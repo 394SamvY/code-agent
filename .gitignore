@@ -22,3 +22,8 @@ data/verl/detail_json/
 .hf_cache
 .claude
 data/verl/codecontests_train.parquet
+
+# SFT outputs — only keep train.log
+outputs/verl_sft/**
+!outputs/verl_sft/**/
+!outputs/verl_sft/**/train.log
