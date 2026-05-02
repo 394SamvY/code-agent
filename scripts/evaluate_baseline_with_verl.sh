@@ -228,6 +228,9 @@ echo "  val_file:             $VAL_FILE"
 echo "  fsdp_model_dtype:     $FSDP_MODEL_DTYPE"
 echo "  dataloader_workers:   $DATALOADER_NUM_WORKERS"
 echo "  run_name:             $RUN_NAME"
+
+echo ""
+echo "start: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
 python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
@@ -289,6 +292,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
 
 echo ""
+echo "end:   $(date '+%Y-%m-%d %H:%M:%S')"
 echo "==== eval complete ===="
 echo "Validation generations: $VALIDATION_DIR/0.jsonl"
 echo "Log file: $LOG_FILE"

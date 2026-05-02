@@ -18,6 +18,7 @@ Then follow any task-specific documents linked from those files, especially `doc
 - Treat `docs/project_status.md` as the current progress and handoff entry point.
 - Keep this file thin. If project rules, data status, baseline status, or command defaults change, update `AGENTS.md`, `README.md`, or `docs/project_status.md` instead of copying the full content here.
 - Do not reintroduce paths or commands that no longer exist. Check the repository before adding tool-specific quick commands.
+- 临时脚本运行时使用项目根目录下的 `.venv` 环境（如 `.venv/bin/python3 script.py`）。
 
 ## Current High-Level Context
 

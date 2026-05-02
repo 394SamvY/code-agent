@@ -14,6 +14,11 @@ __pycache__/
 .DS_Store
 
 #data
-data
+data/*
+!data/verl/
+!data/verl/*
+data/verl/livecodebench_test.parquet
+data/verl/detail_json/
 .hf_cache
 .claude
+data/verl/codecontests_train.parquet
