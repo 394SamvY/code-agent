@@ -4,6 +4,8 @@
 - data.tools_key=tools
 - data.enable_thinking_key=enable_thinking
 - data.enable_thinking_default=false
+- data.custom_cls.path=/root/autodl-tmp/code-agent/src/verl_sft_dataset_fix.py
+- data.custom_cls.name=FixedMultiTurnSFTDataset
 - data.pad_mode=no_padding
 - data.max_length=32768
 - data.truncation=right
@@ -22,9 +24,9 @@
 - optim.weight_decay=0.01
 - optim.lr_warmup_steps_ratio=0.03
 - checkpoint.save_contents=[hf_model]
-- trainer.default_local_dir=/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_020152
+- trainer.default_local_dir=/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_033001
 - trainer.project_name=code-agent-sft
-- trainer.experiment_name=qwen3_8b_oj_sft_20260503_020152
+- trainer.experiment_name=qwen3_8b_oj_sft_20260503_033001
 - trainer.logger=console
 - trainer.total_epochs=3
 - trainer.resume_mode=disable
