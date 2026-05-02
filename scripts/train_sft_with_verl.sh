@@ -110,7 +110,7 @@ TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-16}"
 MICRO_BATCH_SIZE_PER_GPU="${MICRO_BATCH_SIZE_PER_GPU:-1}"
 
 # 单条 multi-turn trajectory 的最大 token 长度；当前数据 P90 约 18k，最长约 53k。
-MAX_LENGTH="${MAX_LENGTH:-32768}"
+MAX_LENGTH="${MAX_LENGTH:-20480}"
 
 # dynamic batch 每张 GPU 每个 micro batch 的 token 上限；默认等于 MAX_LENGTH，配合 SP 后实际可承载更长序列。
 MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-$MAX_LENGTH}"

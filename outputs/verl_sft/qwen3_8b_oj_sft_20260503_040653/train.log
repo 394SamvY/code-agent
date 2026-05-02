@@ -1,0 +1,213 @@
+==== verl OJ-like multiturn SFT ====
+
+-- 路径 --
+  project_dir:          /root/autodl-tmp/code-agent
+  train_file:           /root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_train.parquet
+  val_file:             /root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_val.parquet
+  model_path:           /root/autodl-tmp/models/Qwen3-8B
+  save_path:            /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653
+
+-- 训练参数 --
+  cuda_visible_devices: 0,1
+  num_gpus:             2
+  sp_size:              2
+  train_batch_size:     16
+  micro_batch_per_gpu:  1
+  max_length:           20480
+  max_token_len/gpu:    20480
+  truncation:           right
+  total_epochs:         3
+  total_training_steps: <by epochs>
+  lr:                   1e-5
+  weight_decay:         0.01
+  warmup_ratio:         0.03
+  finetune_mode:        full
+  fsdp_model_dtype:     bf16
+  fsdp_dtype:           bfloat16
+  grad_checkpointing:   true
+  optimizer_offload:    false
+  param_offload:        false
+  checkpoint_contents:  [hf_model]
+  max_ckpt_to_keep:     1
+
+start: 2026-05-03 04:06:53
+
+dataset len: 435
+dataset len: 435
+dataset len: 48
+dataset len: 48
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 96.20it/s]
+Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+[rank0]:[W503 04:07:03.385931823 ProcessGroupNCCL.cpp:5072] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+NCCL version 2.27.5+cuda12.9
+Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 131.87it/s]
+Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+Qwen3ForCausalLM contains 8.19B parameters
+Before FSDP, memory allocated (GB): 0.00, memory reserved (GB): 0.00, device memory used/total (GB): 0.89/79.25
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+[2026-05-03 04:07:05,549][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 81,
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+After FSDP, memory allocated (GB): 7.63, memory reserved (GB): 14.41, device memory used/total (GB): 15.30/79.25
+Total steps: 81, num_warmup_steps: 2
+{'model': {'_target_': 'verl.workers.config.HFModelConfig', 'path': '/root/autodl-tmp/models/Qwen3-8B', 'hf_config_path': None, 'tokenizer_path': None, 'use_shm': False, 'trust_remote_code': False, 'custom_chat_template': None, 'external_lib': None, 'override_config': {}, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': True, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear', 'exclude_modules': None, 'lora_adapter_path': None, 'use_liger': False, 'use_fused_kernels': False, 'fused_kernel_options': {'impl_backend': 'torch'}, 'tiled_mlp': {'enabled': False, 'num_shards': 4}, 'mtp': {'_target_': 'verl.workers.config.MtpConfig', 'enable': False, 'enable_train': False, 'enable_rollout': False, 'detach_encoder': False, 'mtp_loss_scaling_factor': 0.1, 'speculative_algorithm': 'EAGLE', 'speculative_num_steps': 3, 'speculative_eagle_topk': 1, 'speculative_num_draft_tokens': 4, 'method': 'mtp', 'num_speculative_tokens': 1}}, 'engine': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'fsdp_size': -1, 'forward_prefetch': False, 'model_dtype': 'bf16', 'use_orig_params': False, 'seed': 42, 'full_determinism': False, 'ulysses_sequence_parallel_size': 2, 'entropy_from_logits_with_chunking': False, 'use_torch_compile': True, 'entropy_checkpointing': False, 'forward_only': False, 'strategy': 'fsdp', 'dtype': 'bfloat16', 'qat': {'_target_': 'verl.workers.config.QATEngineConfig', 'enable': False, 'mode': 'w4a16', 'group_size': 16, 'ignore_patterns': ['lm_head', 'embed_tokens', 're:.*mlp.gate$'], 'activation_observer': 'static_minmax', 'quantization_config_path': None}}, 'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig', 'optimizer': 'AdamW', 'optimizer_impl': 'torch.optim', 'lr': 1e-05, 'lr_warmup_steps_ratio': 0.03, 'total_training_steps': -1, 'weight_decay': 0.01, 'lr_warmup_steps': -1, 'betas': [0.9, 0.999], 'clip_grad': 1.0, 'min_lr_ratio': 0.0, 'num_cycles': 0.5, 'lr_scheduler_type': 'constant', 'zero_indexed_step': True, 'warmup_style': None, 'override_optimizer_config': None}, 'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig', 'tool': 'torch', 'enable': False, 'all_ranks': False, 'ranks': [], 'save_path': 'outputs/profile', 'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig', 'contents': [], 'level': 'level0', 'analysis': True, 'discrete': False, 'name': 'npu'}, 'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig', 'discrete': '${oc.select:global_profiler.global_tool_config.nsys.discrete}', 'name': 'nsight'}, 'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig', 'contents': [], 'discrete': False, 'name': 'torch'}, 'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig', 'trace_alloc_max_entries': '${oc.select:global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries,100000}', 'stack_depth': '${oc.select:global_profiler.global_tool_config.torch_memory.stack_depth,32}', 'name': 'torch_memory'}}}, 'data': {'train_batch_size': 16, 'micro_batch_size_per_gpu': 1, 'max_token_len_per_gpu': 20480, 'use_dynamic_bsz': True, 'train_files': '/root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_train.parquet', 'val_files': '/root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_val.parquet', 'train_max_samples': -1, 'val_max_samples': -1, 'messages_key': 'messages', 'tools_key': 'tools', 'enable_thinking_key': 'enable_thinking', 'enable_thinking_default': False, 'pad_mode': 'no_padding', 'max_length': 20480, 'truncation': 'right', 'balance_dp_token': False, 'custom_cls': {'path': '/root/autodl-tmp/code-agent/src/verl_sft_dataset_fix.py', 'name': 'FixedMultiTurnSFTDataset'}, 'use_shm': False, 'apply_chat_template_kwargs': {}, 'num_workers': 4, 'ignore_input_ids_mismatch': True}, 'checkpoint': {'_target_': 'verl.trainer.config.CheckpointConfig', 'save_contents': ['hf_model'], 'load_contents': '${checkpoint.save_contents}', 'mbridge_config': {}}, 'trainer': {'default_local_dir': '/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653', 'default_hdfs_dir': None, 'project_name': 'code-agent-sft', 'experiment_name': 'qwen3_8b_oj_sft_20260503_040653', 'total_epochs': 3, 'total_training_steps': None, 'logger': 'console', 'seed': 1, 'save_freq': 'after_each_epoch', 'test_freq': 5, 'max_ckpt_to_keep': 1, 'resume_mode': 'disable', 'resume_from_path': None, 'device': 'cuda', 'nnodes': 1, 'n_gpus_per_node': 1, 'profile_interval': [-1, -1]}, 'global_profiler': {'global_tool_config': {'nsys': {'worker_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph', 'capture-range': 'cudaProfilerApi', 'capture-range-end': None, 'kill': 'none'}}}}}
+[2026-05-03 04:07:05,964][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 81,
+Epoch 1/3:   0%|          | 0/27 [00:00<?, ?it/s]NCCL version 2.27.5+cuda12.9
+[rank1]:W0503 04:07:07.378000 2717 site-packages/torch/fx/_symbolic_trace.py:52] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank0]:W0503 04:07:07.575000 2716 site-packages/torch/fx/_symbolic_trace.py:52] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+step:1 - train/loss:1.2313698530197144 - train/grad_norm:11.1875 - train/lr:5e-06 - train/mfu:0.42967783077735167 - train/global_tokens:88707 - train/total_tokens(B):8.8707e-05
+Epoch 1/3:   4%|▎         | 1/27 [00:20<09:02, 20.86s/it]step:2 - train/loss:1.3870832920074463 - train/grad_norm:10.6875 - train/lr:1e-05 - train/mfu:0.40304793236600234 - train/global_tokens:142147 - train/total_tokens(B):0.000230854
+Epoch 1/3:   7%|▋         | 2/27 [00:56<12:12, 29.32s/it]step:3 - train/loss:1.345324993133545 - train/grad_norm:10.3125 - train/lr:1e-05 - train/mfu:0.4482667851557549 - train/global_tokens:99429 - train/total_tokens(B):0.000330283
+Epoch 1/3:  11%|█         | 3/27 [01:17<10:13, 25.56s/it]step:4 - train/loss:1.0898590087890625 - train/grad_norm:6.90625 - train/lr:1e-05 - train/mfu:0.4476782215674953 - train/global_tokens:135758 - train/total_tokens(B):0.000466041
+Epoch 1/3:  15%|█▍        | 4/27 [01:46<10:26, 27.23s/it]step:5 - train/loss:1.0650265216827393 - train/grad_norm:4.75 - train/lr:1e-05 - train/mfu:0.417721114345179 - train/global_tokens:121946 - train/total_tokens(B):0.000587987
+step:5 - val/loss:0.9948634505271912
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+Epoch 1/3:  19%|█▊        | 5/27 [02:33<12:33, 34.27s/it]step:6 - train/loss:0.9599524736404419 - train/grad_norm:2.859375 - train/lr:1e-05 - train/mfu:0.4265321711396975 - train/global_tokens:133989 - train/total_tokens(B):0.000721976
+Epoch 1/3:  22%|██▏       | 6/27 [03:04<11:34, 33.05s/it]step:7 - train/loss:0.972148060798645 - train/grad_norm:2.296875 - train/lr:1e-05 - train/mfu:0.4225366203134449 - train/global_tokens:109486 - train/total_tokens(B):0.000831462
+Epoch 1/3:  26%|██▌       | 7/27 [03:29<10:08, 30.44s/it]step:8 - train/loss:0.9555871486663818 - train/grad_norm:1.9609375 - train/lr:1e-05 - train/mfu:0.4206494193986038 - train/global_tokens:118416 - train/total_tokens(B):0.000949878
+Epoch 1/3:  30%|██▉       | 8/27 [03:56<09:16, 29.28s/it]step:9 - train/loss:0.9230914115905762 - train/grad_norm:1.828125 - train/lr:1e-05 - train/mfu:0.4437233957574665 - train/global_tokens:125681 - train/total_tokens(B):0.001075559
+Epoch 1/3:  33%|███▎      | 9/27 [04:24<08:40, 28.89s/it]step:10 - train/loss:0.9720467329025269 - train/grad_norm:1.53125 - train/lr:1e-05 - train/mfu:0.42540369073599454 - train/global_tokens:142032 - train/total_tokens(B):0.001217591
+step:10 - val/loss:0.9077994227409363
+Epoch 1/3:  37%|███▋      | 10/27 [05:15<10:10, 35.90s/it]step:11 - train/loss:0.8904861211776733 - train/grad_norm:1.3515625 - train/lr:1e-05 - train/mfu:0.4237540385334877 - train/global_tokens:118387 - train/total_tokens(B):0.001335978
+Epoch 1/3:  41%|████      | 11/27 [05:43<08:51, 33.22s/it]step:12 - train/loss:0.9241552352905273 - train/grad_norm:1.296875 - train/lr:1e-05 - train/mfu:0.43794298163668277 - train/global_tokens:103092 - train/total_tokens(B):0.00143907
+Epoch 1/3:  44%|████▍     | 12/27 [06:06<07:31, 30.12s/it]step:13 - train/loss:0.8608808517456055 - train/grad_norm:1.2421875 - train/lr:1e-05 - train/mfu:0.43129945135376285 - train/global_tokens:98022 - train/total_tokens(B):0.001537092
+Epoch 1/3:  48%|████▊     | 13/27 [06:28<06:26, 27.64s/it]step:14 - train/loss:0.8901198506355286 - train/grad_norm:1.1875 - train/lr:1e-05 - train/mfu:0.44910110362010114 - train/global_tokens:125083 - train/total_tokens(B):0.001662175
+Epoch 1/3:  52%|█████▏    | 14/27 [06:54<05:56, 27.44s/it]step:15 - train/loss:0.9115111827850342 - train/grad_norm:1.1328125 - train/lr:1e-05 - train/mfu:0.4224134546659276 - train/global_tokens:151340 - train/total_tokens(B):0.001813515
+step:15 - val/loss:0.8696321845054626
+Epoch 1/3:  56%|█████▌    | 15/27 [07:49<07:06, 35.56s/it]step:16 - train/loss:0.8686089515686035 - train/grad_norm:1.1171875 - train/lr:1e-05 - train/mfu:0.4249965687594103 - train/global_tokens:100764 - train/total_tokens(B):0.001914279
+Epoch 1/3:  59%|█████▉    | 16/27 [08:12<05:49, 31.74s/it]step:17 - train/loss:0.8194077014923096 - train/grad_norm:1.0390625 - train/lr:1e-05 - train/mfu:0.40411566831523926 - train/global_tokens:98935 - train/total_tokens(B):0.002013214
+Epoch 1/3:  63%|██████▎   | 17/27 [08:35<04:52, 29.23s/it]step:18 - train/loss:0.9427977800369263 - train/grad_norm:1.03125 - train/lr:1e-05 - train/mfu:0.4289977772636501 - train/global_tokens:143859 - train/total_tokens(B):0.002157073
+Epoch 1/3:  67%|██████▋   | 18/27 [09:09<04:36, 30.76s/it]step:19 - train/loss:0.8995441198348999 - train/grad_norm:1.078125 - train/lr:1e-05 - train/mfu:0.45317948307100947 - train/global_tokens:99109 - train/total_tokens(B):0.002256182
+Epoch 1/3:  70%|███████   | 19/27 [09:30<03:41, 27.67s/it]step:20 - train/loss:0.7519389390945435 - train/grad_norm:0.97265625 - train/lr:1e-05 - train/mfu:0.45032543408829323 - train/global_tokens:94255 - train/total_tokens(B):0.002350437
+step:20 - val/loss:0.84425950050354
+Epoch 1/3:  74%|███████▍  | 20/27 [10:08<03:36, 30.92s/it]step:21 - train/loss:0.8904316425323486 - train/grad_norm:0.83984375 - train/lr:1e-05 - train/mfu:0.4278253678382292 - train/global_tokens:151711 - train/total_tokens(B):0.002502148
+Epoch 1/3:  78%|███████▊  | 21/27 [10:44<03:14, 32.37s/it]step:22 - train/loss:0.8916831016540527 - train/grad_norm:0.8828125 - train/lr:1e-05 - train/mfu:0.4366534778379679 - train/global_tokens:137045 - train/total_tokens(B):0.002639193
+Epoch 1/3:  81%|████████▏ | 22/27 [11:16<02:40, 32.08s/it]step:23 - train/loss:0.8540771007537842 - train/grad_norm:0.75390625 - train/lr:1e-05 - train/mfu:0.4402884596968454 - train/global_tokens:145160 - train/total_tokens(B):0.002784353
+Epoch 1/3:  85%|████████▌ | 23/27 [11:48<02:08, 32.24s/it]step:24 - train/loss:0.8033097386360168 - train/grad_norm:0.75 - train/lr:1e-05 - train/mfu:0.3959622400323281 - train/global_tokens:120176 - train/total_tokens(B):0.002904529
+Epoch 1/3:  89%|████████▉ | 24/27 [12:18<01:34, 31.52s/it]step:25 - train/loss:0.8893285989761353 - train/grad_norm:0.79296875 - train/lr:1e-05 - train/mfu:0.42522820014410495 - train/global_tokens:143547 - train/total_tokens(B):0.003048076
+step:25 - val/loss:0.8259465098381042
+Epoch 1/3:  93%|█████████▎| 25/27 [13:10<01:15, 37.52s/it]step:26 - train/loss:0.831579864025116 - train/grad_norm:0.7890625 - train/lr:1e-05 - train/mfu:0.4513307269888388 - train/global_tokens:130795 - train/total_tokens(B):0.003178871
+Epoch 1/3:  96%|█████████▋| 26/27 [13:38<00:34, 34.93s/it]step:27 - train/loss:0.796532154083252 - train/grad_norm:0.859375 - train/lr:1e-05 - train/mfu:0.43168357263625123 - train/global_tokens:91942 - train/total_tokens(B):0.003270813
+Saving checkpoint to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_27
+[2026-05-03 04:21:06,199][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved model config and tokenizer class to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_27/huggingface
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+[2026-05-03 04:21:31,357][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved hf_model to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_27/huggingface
+Saved dataloader state to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_27/data_0.pt
+Updated checkpoint tracker: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/latest_checkpointed_iteration.txt
+Epoch 1/3: 100%|██████████| 27/27 [14:25<00:00, 38.42s/it]Epoch 1/3: 100%|██████████| 27/27 [14:25<00:00, 32.06s/it]
+Epoch 2/3:   0%|          | 0/27 [00:00<?, ?it/s]step:28 - train/loss:0.7713600397109985 - train/grad_norm:0.8515625 - train/lr:1e-05 - train/mfu:0.42696949334943224 - train/global_tokens:78581 - train/total_tokens(B):0.003349394
+Epoch 2/3:   4%|▎         | 1/27 [00:17<07:45, 17.90s/it]step:29 - train/loss:0.8666563034057617 - train/grad_norm:0.7421875 - train/lr:1e-05 - train/mfu:0.44066935772199256 - train/global_tokens:123084 - train/total_tokens(B):0.003472478
+Epoch 2/3:   7%|▋         | 2/27 [00:44<09:39, 23.18s/it]step:30 - train/loss:0.8182541131973267 - train/grad_norm:0.81640625 - train/lr:1e-05 - train/mfu:0.4257368647858937 - train/global_tokens:127140 - train/total_tokens(B):0.003599618
+step:30 - val/loss:0.8124289512634277
+Epoch 2/3:  11%|█         | 3/27 [01:33<13:52, 34.69s/it]step:31 - train/loss:0.7918164730072021 - train/grad_norm:0.83203125 - train/lr:1e-05 - train/mfu:0.4281928766232493 - train/global_tokens:83646 - train/total_tokens(B):0.003683264
+Epoch 2/3:  15%|█▍        | 4/27 [01:51<10:50, 28.28s/it]step:32 - train/loss:0.8263309001922607 - train/grad_norm:0.6875 - train/lr:1e-05 - train/mfu:0.44324167000486125 - train/global_tokens:134654 - train/total_tokens(B):0.003817918
+Epoch 2/3:  19%|█▊        | 5/27 [02:21<10:37, 28.96s/it]step:33 - train/loss:0.7456358075141907 - train/grad_norm:2.171875 - train/lr:1e-05 - train/mfu:0.4461570586281516 - train/global_tokens:126429 - train/total_tokens(B):0.003944347
+Epoch 2/3:  22%|██▏       | 6/27 [02:49<10:00, 28.61s/it]step:34 - train/loss:0.8027288913726807 - train/grad_norm:0.64453125 - train/lr:1e-05 - train/mfu:0.4106837898182185 - train/global_tokens:148552 - train/total_tokens(B):0.004092899
+Epoch 2/3:  26%|██▌       | 7/27 [03:25<10:21, 31.06s/it]step:35 - train/loss:0.7869603633880615 - train/grad_norm:0.78125 - train/lr:1e-05 - train/mfu:0.44490380747597147 - train/global_tokens:83493 - train/total_tokens(B):0.004176392
+step:35 - val/loss:0.8026189804077148
+Epoch 2/3:  30%|██▉       | 8/27 [04:02<10:23, 32.82s/it]step:36 - train/loss:0.8335937261581421 - train/grad_norm:0.62109375 - train/lr:1e-05 - train/mfu:0.425882579496156 - train/global_tokens:182724 - train/total_tokens(B):0.004359116
+Epoch 2/3:  33%|███▎      | 9/27 [04:45<10:49, 36.09s/it]step:37 - train/loss:0.8372668027877808 - train/grad_norm:0.66796875 - train/lr:1e-05 - train/mfu:0.44424716735383224 - train/global_tokens:125050 - train/total_tokens(B):0.004484166
+Epoch 2/3:  37%|███▋      | 10/27 [05:13<09:31, 33.63s/it]step:38 - train/loss:0.7310208082199097 - train/grad_norm:0.77734375 - train/lr:1e-05 - train/mfu:0.39018161269985363 - train/global_tokens:79141 - train/total_tokens(B):0.004563307
+Epoch 2/3:  41%|████      | 11/27 [05:33<07:47, 29.25s/it]step:39 - train/loss:0.7686213850975037 - train/grad_norm:0.6796875 - train/lr:1e-05 - train/mfu:0.4377109383554388 - train/global_tokens:141725 - train/total_tokens(B):0.004705032
+Epoch 2/3:  44%|████▍     | 12/27 [06:05<07:31, 30.11s/it]step:40 - train/loss:0.7579897046089172 - train/grad_norm:0.7109375 - train/lr:1e-05 - train/mfu:0.4506114489710154 - train/global_tokens:96397 - train/total_tokens(B):0.004801429
+step:40 - val/loss:0.794725775718689
+Epoch 2/3:  48%|████▊     | 13/27 [06:43<07:35, 32.56s/it]step:41 - train/loss:0.7854096293449402 - train/grad_norm:0.6796875 - train/lr:1e-05 - train/mfu:0.43474353285784 - train/global_tokens:129182 - train/total_tokens(B):0.004930611
+Epoch 2/3:  52%|█████▏    | 14/27 [07:13<06:52, 31.69s/it]step:42 - train/loss:0.7628430128097534 - train/grad_norm:0.65625 - train/lr:1e-05 - train/mfu:0.446852667187606 - train/global_tokens:128651 - train/total_tokens(B):0.005059262
+Epoch 2/3:  56%|█████▌    | 15/27 [07:41<06:07, 30.66s/it]step:43 - train/loss:0.7818211913108826 - train/grad_norm:0.71484375 - train/lr:1e-05 - train/mfu:0.4142502993841111 - train/global_tokens:107640 - train/total_tokens(B):0.005166902
+Epoch 2/3:  59%|█████▉    | 16/27 [08:05<05:16, 28.80s/it]step:44 - train/loss:0.8376290798187256 - train/grad_norm:0.66796875 - train/lr:1e-05 - train/mfu:0.4371966079560359 - train/global_tokens:134152 - train/total_tokens(B):0.005301054
+Epoch 2/3:  63%|██████▎   | 17/27 [08:36<04:53, 29.34s/it]step:45 - train/loss:0.7465961575508118 - train/grad_norm:0.82421875 - train/lr:1e-05 - train/mfu:0.41887547245260376 - train/global_tokens:77900 - train/total_tokens(B):0.005378954
+step:45 - val/loss:0.7880740165710449
+Epoch 2/3:  67%|██████▋   | 18/27 [09:12<04:41, 31.22s/it]step:46 - train/loss:0.7855175137519836 - train/grad_norm:0.5703125 - train/lr:1e-05 - train/mfu:0.4331356714489809 - train/global_tokens:156373 - train/total_tokens(B):0.005535327
+Epoch 2/3:  70%|███████   | 19/27 [09:47<04:20, 32.62s/it]step:47 - train/loss:0.8282114863395691 - train/grad_norm:0.6640625 - train/lr:1e-05 - train/mfu:0.43778222260128313 - train/global_tokens:136171 - train/total_tokens(B):0.005671498
+Epoch 2/3:  74%|███████▍  | 20/27 [10:19<03:45, 32.20s/it]step:48 - train/loss:0.8192377090454102 - train/grad_norm:0.60546875 - train/lr:1e-05 - train/mfu:0.429656717578301 - train/global_tokens:183988 - train/total_tokens(B):0.005855486
+Epoch 2/3:  78%|███████▊  | 21/27 [11:02<03:32, 35.49s/it]step:49 - train/loss:0.8492124676704407 - train/grad_norm:0.65625 - train/lr:1e-05 - train/mfu:0.44693823667116706 - train/global_tokens:123644 - train/total_tokens(B):0.00597913
+Epoch 2/3:  81%|████████▏ | 22/27 [11:28<02:43, 32.72s/it]step:50 - train/loss:0.7878079414367676 - train/grad_norm:0.7109375 - train/lr:1e-05 - train/mfu:0.42941402393989436 - train/global_tokens:108398 - train/total_tokens(B):0.006087528
+step:50 - val/loss:0.7825987339019775
+Epoch 2/3:  85%|████████▌ | 23/27 [12:11<02:22, 35.64s/it]step:51 - train/loss:0.835462749004364 - train/grad_norm:0.83984375 - train/lr:1e-05 - train/mfu:0.40891282381365446 - train/global_tokens:80499 - train/total_tokens(B):0.006168027
+Epoch 2/3:  89%|████████▉ | 24/27 [12:29<01:31, 30.52s/it]step:52 - train/loss:0.7782260775566101 - train/grad_norm:0.71484375 - train/lr:1e-05 - train/mfu:0.4200679146769426 - train/global_tokens:117069 - train/total_tokens(B):0.006285096
+Epoch 2/3:  93%|█████████▎| 25/27 [12:57<00:59, 29.68s/it]step:53 - train/loss:0.7544795870780945 - train/grad_norm:0.9765625 - train/lr:1e-05 - train/mfu:0.44069087494957815 - train/global_tokens:125488 - train/total_tokens(B):0.006410584
+Epoch 2/3:  96%|█████████▋| 26/27 [13:25<00:29, 29.15s/it]step:54 - train/loss:0.816540002822876 - train/grad_norm:0.625 - train/lr:1e-05 - train/mfu:0.42453893597127657 - train/global_tokens:141964 - train/total_tokens(B):0.006552548
+Saving checkpoint to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_54
+[2026-05-03 04:35:31,858][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved model config and tokenizer class to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_54/huggingface
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is bfloat16. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is bfloat16. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+[2026-05-03 04:35:56,953][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved hf_model to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_54/huggingface
+Checkpoint manager remove previous save local path: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_27
+Saved dataloader state to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_54/data_0.pt
+Updated checkpoint tracker: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/latest_checkpointed_iteration.txt
+Epoch 2/3: 100%|██████████| 27/27 [14:25<00:00, 38.58s/it]Epoch 2/3: 100%|██████████| 27/27 [14:26<00:00, 32.09s/it]
+Epoch 3/3:   0%|          | 0/27 [00:00<?, ?it/s]step:55 - train/loss:0.8094329833984375 - train/grad_norm:0.61328125 - train/lr:1e-05 - train/mfu:0.43226642743903254 - train/global_tokens:137580 - train/total_tokens(B):0.006690128
+step:55 - val/loss:0.7777876853942871
+Epoch 3/3:   4%|▎         | 1/27 [00:51<22:16, 51.40s/it]step:56 - train/loss:0.7574459314346313 - train/grad_norm:0.70703125 - train/lr:1e-05 - train/mfu:0.44545345405548475 - train/global_tokens:129885 - train/total_tokens(B):0.006820013
+Epoch 3/3:   7%|▋         | 2/27 [01:20<16:01, 38.47s/it]step:57 - train/loss:0.826590359210968 - train/grad_norm:0.5390625 - train/lr:1e-05 - train/mfu:0.43429295140692264 - train/global_tokens:185266 - train/total_tokens(B):0.007005279
+Epoch 3/3:  11%|█         | 3/27 [02:03<16:11, 40.47s/it]step:58 - train/loss:0.7782581448554993 - train/grad_norm:0.6640625 - train/lr:1e-05 - train/mfu:0.4286489504631879 - train/global_tokens:114682 - train/total_tokens(B):0.007119961
+Epoch 3/3:  15%|█▍        | 4/27 [02:29<13:19, 34.74s/it]step:59 - train/loss:0.7962064743041992 - train/grad_norm:0.65625 - train/lr:1e-05 - train/mfu:0.4454496161300411 - train/global_tokens:135926 - train/total_tokens(B):0.007255887
+Epoch 3/3:  19%|█▊        | 5/27 [03:00<12:11, 33.23s/it]step:60 - train/loss:0.8559354543685913 - train/grad_norm:0.75390625 - train/lr:1e-05 - train/mfu:0.4214124005892208 - train/global_tokens:118457 - train/total_tokens(B):0.007374344
+step:60 - val/loss:0.7737587690353394
+Epoch 3/3:  22%|██▏       | 6/27 [03:46<13:09, 37.59s/it]step:61 - train/loss:0.7401931285858154 - train/grad_norm:0.55859375 - train/lr:1e-05 - train/mfu:0.42292156949327864 - train/global_tokens:148456 - train/total_tokens(B):0.0075228
+Epoch 3/3:  26%|██▌       | 7/27 [04:21<12:14, 36.74s/it]step:62 - train/loss:0.6936001777648926 - train/grad_norm:0.87890625 - train/lr:1e-05 - train/mfu:0.4540798888869347 - train/global_tokens:64253 - train/total_tokens(B):0.007587053
+Epoch 3/3:  30%|██▉       | 8/27 [04:33<09:11, 29.03s/it]step:63 - train/loss:0.7308354377746582 - train/grad_norm:0.71875 - train/lr:1e-05 - train/mfu:0.45337158670283684 - train/global_tokens:94139 - train/total_tokens(B):0.007681192
+Epoch 3/3:  33%|███▎      | 9/27 [04:53<07:47, 25.99s/it]step:64 - train/loss:0.805372953414917 - train/grad_norm:0.5234375 - train/lr:1e-05 - train/mfu:0.41751717367744434 - train/global_tokens:195046 - train/total_tokens(B):0.007876238
+Epoch 3/3:  37%|███▋      | 10/27 [05:40<09:16, 32.75s/it]step:65 - train/loss:0.7884058952331543 - train/grad_norm:0.6875 - train/lr:1e-05 - train/mfu:0.4089491533918584 - train/global_tokens:106755 - train/total_tokens(B):0.007982993
+step:65 - val/loss:0.7699405550956726
+Epoch 3/3:  41%|████      | 11/27 [06:24<09:38, 36.19s/it]step:66 - train/loss:0.7733266353607178 - train/grad_norm:0.671875 - train/lr:1e-05 - train/mfu:0.4289925301707231 - train/global_tokens:124524 - train/total_tokens(B):0.008107517
+Epoch 3/3:  44%|████▍     | 12/27 [06:52<08:25, 33.72s/it]step:67 - train/loss:0.6263388991355896 - train/grad_norm:0.83984375 - train/lr:1e-05 - train/mfu:0.42976820573928337 - train/global_tokens:58541 - train/total_tokens(B):0.008166058
+Epoch 3/3:  48%|████▊     | 13/27 [07:04<06:19, 27.13s/it]step:68 - train/loss:0.7128119468688965 - train/grad_norm:0.59375 - train/lr:1e-05 - train/mfu:0.38923004663394906 - train/global_tokens:145203 - train/total_tokens(B):0.008311261
+Epoch 3/3:  52%|█████▏    | 14/27 [07:42<06:33, 30.25s/it]step:69 - train/loss:0.7820454239845276 - train/grad_norm:0.578125 - train/lr:1e-05 - train/mfu:0.44235263413509596 - train/global_tokens:144424 - train/total_tokens(B):0.008455685
+Epoch 3/3:  56%|█████▌    | 15/27 [08:14<06:11, 30.92s/it]step:70 - train/loss:0.6737592220306396 - train/grad_norm:0.7578125 - train/lr:1e-05 - train/mfu:0.4161651494260163 - train/global_tokens:75727 - train/total_tokens(B):0.008531412
+step:70 - val/loss:0.7668122053146362
+Epoch 3/3:  59%|█████▉    | 16/27 [08:49<05:53, 32.15s/it]step:71 - train/loss:0.7330610156059265 - train/grad_norm:0.56640625 - train/lr:1e-05 - train/mfu:0.44052562244880106 - train/global_tokens:145229 - train/total_tokens(B):0.008676641
+Epoch 3/3:  63%|██████▎   | 17/27 [09:21<05:20, 32.05s/it]step:72 - train/loss:0.7601308822631836 - train/grad_norm:0.6875 - train/lr:1e-05 - train/mfu:0.4129345912350972 - train/global_tokens:117336 - train/total_tokens(B):0.008793977
+Epoch 3/3:  67%|██████▋   | 18/27 [09:49<04:37, 30.78s/it]step:73 - train/loss:0.7816891670227051 - train/grad_norm:0.64453125 - train/lr:1e-05 - train/mfu:0.43286840003304333 - train/global_tokens:125830 - train/total_tokens(B):0.008919807
+Epoch 3/3:  70%|███████   | 19/27 [10:17<03:59, 29.98s/it]step:74 - train/loss:0.7622343301773071 - train/grad_norm:0.6171875 - train/lr:1e-05 - train/mfu:0.41677733686583507 - train/global_tokens:141170 - train/total_tokens(B):0.009060977
+Epoch 3/3:  74%|███████▍  | 20/27 [10:51<03:38, 31.20s/it]step:75 - train/loss:0.7738029956817627 - train/grad_norm:0.8671875 - train/lr:1e-05 - train/mfu:0.4269222795071863 - train/global_tokens:76163 - train/total_tokens(B):0.00913714
+step:75 - val/loss:0.763615071773529
+Epoch 3/3:  78%|███████▊  | 21/27 [11:27<03:14, 32.45s/it]step:76 - train/loss:0.7396495938301086 - train/grad_norm:0.859375 - train/lr:1e-05 - train/mfu:0.4157270396647789 - train/global_tokens:138876 - train/total_tokens(B):0.009276016
+Epoch 3/3:  81%|████████▏ | 22/27 [11:59<02:42, 32.52s/it]step:77 - train/loss:0.7685320377349854 - train/grad_norm:0.62890625 - train/lr:1e-05 - train/mfu:0.412478790723891 - train/global_tokens:120884 - train/total_tokens(B):0.0093969
+Epoch 3/3:  85%|████████▌ | 23/27 [12:29<02:06, 31.60s/it]step:78 - train/loss:0.71514892578125 - train/grad_norm:0.70703125 - train/lr:1e-05 - train/mfu:0.447065447131452 - train/global_tokens:105509 - train/total_tokens(B):0.009502409
+Epoch 3/3:  89%|████████▉ | 24/27 [12:51<01:26, 28.85s/it]step:79 - train/loss:0.7296048402786255 - train/grad_norm:0.75 - train/lr:1e-05 - train/mfu:0.4491956393312586 - train/global_tokens:89694 - train/total_tokens(B):0.009592103
+Epoch 3/3:  93%|█████████▎| 25/27 [13:10<00:51, 25.98s/it]step:80 - train/loss:0.7592269778251648 - train/grad_norm:0.57421875 - train/lr:1e-05 - train/mfu:0.4501513090299129 - train/global_tokens:142837 - train/total_tokens(B):0.00973494
+step:80 - val/loss:0.7609953284263611
+Epoch 3/3:  96%|█████████▋| 26/27 [14:01<00:33, 33.23s/it]step:81 - train/loss:0.7655303478240967 - train/grad_norm:0.6484375 - train/lr:1e-05 - train/mfu:0.42249752658897677 - train/global_tokens:113515 - train/total_tokens(B):0.009848455
+step:81 - val/loss:0.7605206966400146
+Saving checkpoint to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_81
+[2026-05-03 04:50:45,668][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved model config and tokenizer class to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_81/huggingface
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+[2026-05-03 04:51:11,253][/root/miniconda3/lib/python3.12/site-packages/verl/utils/checkpoint/fsdp_checkpoint_manager.py][INFO] - [Rank 0] Saved hf_model to /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_81/huggingface
+Checkpoint manager remove previous save local path: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_54
+Saved dataloader state to: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/global_step_81/data_0.pt
+Updated checkpoint tracker: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/latest_checkpointed_iteration.txt
+Total time for train steps: 0.00s
+Final validation metrics: {'val/loss': 0.7605206966400146}
+Epoch 3/3:  96%|█████████▋| 26/27 [15:13<00:35, 35.12s/it]
+
+end:   2026-05-03 04:51:16
+==== SFT complete ====
+Checkpoint dir: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653
+Log file:       /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260503_040653/train.log
