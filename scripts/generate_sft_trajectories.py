@@ -100,8 +100,12 @@ MAX_SUBMISSIONS = 5
 MAX_PUBLIC_CALLS = 15
 MAX_ASSISTANT_TURNS = 20
 
+# 思考长度控制（字符数，约等于 token 数 * 4）
+DEFAULT_MAX_THINKING_CHARS = 2000  # 约 500 tokens
+DEFAULT_MAX_TOKENS = 8192  # API 调用的 max_tokens
 
-def call_teacher(client: OpenAI, messages: list[dict], model: str) -> dict | None:
+
+def call_teacher(client: OpenAI, messages: list[dict], model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> dict | None:
     """调 teacher API，返回 assistant message（含 reasoning_content 作为 thinking）。"""
     for attempt in range(3):
         try:
@@ -110,7 +114,7 @@ def call_teacher(client: OpenAI, messages: list[dict], model: str) -> dict | Non
                 messages=messages,
                 tools=TOOLS,
                 temperature=0.6,
-                max_tokens=16384,
+                max_tokens=max_tokens,
                 timeout=120,
             )
             choice = resp.choices[0]
@@ -151,6 +155,8 @@ def run_problem(
     model: str,
     row: pd.Series,
     index: int,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_thinking_chars: int = DEFAULT_MAX_THINKING_CHARS,
 ) -> dict | None:
     """对单道题跑 multi-turn agent loop，返回结果 dict（API 错误时返回 None）。"""
     prompt_str = row["prompt"]
@@ -180,12 +186,23 @@ def run_problem(
     sft_messages = list(messages)  # 存 SFT 数据用，文本 <tool_call> 格式
 
     for turn in range(MAX_ASSISTANT_TURNS):
-        msg = call_teacher(client, api_messages, model)
+        msg = call_teacher(client, api_messages, model, max_tokens=max_tokens)
         if msg is None:
             return None  # API 错误，跳过这道题
 
         reasoning = msg.get("reasoning_content", "") or ""
         content = msg.get("content", "") or ""
+
+        # 截断过长的思考内容
+        if reasoning and len(reasoning) > max_thinking_chars:
+            reasoning = reasoning[:max_thinking_chars]
+            # 尝试在句子边界截断
+            for sep in [". ", "。", "\n\n", "\n"]:
+                last_sep = reasoning.rfind(sep)
+                if last_sep > max_thinking_chars * 0.8:  # 至少保留 80%
+                    reasoning = reasoning[:last_sep + len(sep)]
+                    break
+
         tool_name, tool_args, tool_call_id = parse_tool_call(msg)
 
         if not tool_name:
@@ -289,6 +306,10 @@ def main():
                         help="Stop after this many accepted (0=process all --max-samples)")
     parser.add_argument("--workers", type=int, default=8, help="Concurrent API workers")
     parser.add_argument("--model", default="deepseek-v4-pro", help="Teacher model name")
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS,
+                        help=f"Max tokens per API call (default: {DEFAULT_MAX_TOKENS})")
+    parser.add_argument("--max-thinking-chars", type=int, default=DEFAULT_MAX_THINKING_CHARS,
+                        help=f"Max thinking length in chars, ~tokens*4 (default: {DEFAULT_MAX_THINKING_CHARS})")
     args = parser.parse_args()
 
     df = pd.read_parquet(args.input)
@@ -298,7 +319,8 @@ def main():
     n = len(df)
     target = args.target_accepted
     print(f"Loaded {total} problems, processing {n}, workers={args.workers}"
-          + (f", target accepted={target}" if target else ""))
+          + (f", target accepted={target}" if target else "")
+          + f"\nmax_tokens={args.max_tokens}, max_thinking_chars={args.max_thinking_chars}")
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,7 +338,11 @@ def main():
         idx, row = idx_row
         client = get_client()
         try:
-            traj = run_problem(client, args.model, row, idx)
+            traj = run_problem(
+                client, args.model, row, idx,
+                max_tokens=args.max_tokens,
+                max_thinking_chars=args.max_thinking_chars
+            )
         except Exception:
             with lock:
                 failed_count += 1
