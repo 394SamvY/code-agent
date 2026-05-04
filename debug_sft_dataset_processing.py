@@ -20,8 +20,8 @@ from transformers import AutoTokenizer
 project_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_dir))
 
-# 导入 verl 的 dataset 类
-from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
+# 导入项目自定义的 dataset 类（修复了 <think> 标签被丢弃的问题）
+from src.verl_sft_dataset_fix import FixedMultiTurnSFTDataset
 
 
 def main():
@@ -59,7 +59,8 @@ def main():
         "apply_chat_template_kwargs": {},
     })
 
-    print("\n[2] 创建 MultiTurnSFTDataset...")
+    print("\n[2] 创建 FixedMultiTurnSFTDataset (项目自定义版本)...")
+    print(f"    说明: 修复了 verl 原版逐条处理导致 <think> 标签被丢弃的问题")
     print(f"    配置:")
     print(f"      - messages_key: {data_config.messages_key}")
     print(f"      - tools_key: {data_config.tools_key}")
@@ -69,7 +70,7 @@ def main():
     print(f"      - max_length: {data_config.max_length}")
     print(f"      - truncation: {data_config.truncation}")
 
-    dataset = MultiTurnSFTDataset(
+    dataset = FixedMultiTurnSFTDataset(
         parquet_files=str(data_file),
         tokenizer=tokenizer,
         config=data_config,
@@ -97,18 +98,22 @@ def main():
 
         print(f"\n      Turn {i} [{role}]:")
         if content:
-            content_preview = content[:200] + "..." if len(content) > 200 else content
-            print(f"        content: {content_preview}")
-        if tool_calls:
+            print(f"        content: {content}")
+        if tool_calls is not None and len(tool_calls) > 0:
             print(f"        tool_calls: {len(tool_calls)} calls")
-            for tc in tool_calls[:2]:  # 只显示前2个
+            for tc in tool_calls:  # 显示所有 tool calls
                 print(f"          - {tc.get('function', {}).get('name', 'unknown')}")
+                print(f"            arguments: {tc.get('function', {}).get('arguments', '')}")
 
-    print(f"\n    tools 数量: {len(first_row['tools']) if first_row['tools'] else 0}")
-    if first_row['tools']:
+    tools = first_row['tools']
+    tools_count = len(tools) if tools is not None and len(tools) > 0 else 0
+    print(f"\n    tools 数量: {tools_count}")
+    if tools_count > 0:
         print(f"    tools 列表:")
-        for tool in first_row['tools'][:3]:  # 只显示前3个
+        for tool in tools:  # 显示所有 tools
             print(f"      - {tool.get('function', {}).get('name', 'unknown')}")
+            print(f"        description: {tool.get('function', {}).get('description', '')}")
+            print(f"        parameters: {tool.get('function', {}).get('parameters', {})}")
 
     # 5. 获取处理后的样本
     print("\n" + "=" * 80)
@@ -128,7 +133,7 @@ def main():
     print(f"      shape: {input_ids.shape}")
     print(f"      dtype: {input_ids.dtype}")
     print(f"      序列长度: {len(input_ids)}")
-    print(f"      前 50 个 token IDs: {input_ids[:50].tolist()}")
+    print(f"      完整 token IDs: {input_ids.tolist()}")
 
     print(f"\n[4.2] loss_mask (1=计算loss, 0=不计算):")
     print(f"      shape: {loss_mask.shape}")
@@ -136,12 +141,12 @@ def main():
     print(f"      需要计算 loss 的 token 数: {loss_mask.sum().item()}")
     print(f"      不计算 loss 的 token 数: {(loss_mask == 0).sum().item()}")
     print(f"      loss 覆盖率: {loss_mask.sum().item() / len(loss_mask) * 100:.2f}%")
-    print(f"      前 50 个 mask 值: {loss_mask[:50].tolist()}")
+    print(f"      完整 mask 值: {loss_mask.tolist()}")
 
     print(f"\n[4.3] position_ids:")
     print(f"      shape: {position_ids.shape}")
     print(f"      dtype: {position_ids.dtype}")
-    print(f"      前 50 个位置: {position_ids[:50].tolist()}")
+    print(f"      完整位置: {position_ids.tolist()}")
 
     # 6. 解码展示
     print("\n" + "=" * 80)
@@ -149,10 +154,9 @@ def main():
     print("=" * 80)
 
     decoded_full = tokenizer.decode(input_ids, skip_special_tokens=False)
-    print(f"\n完整序列 (前 2000 字符):")
-    print(decoded_full[:2000])
-    if len(decoded_full) > 2000:
-        print(f"\n... (总长度: {len(decoded_full)} 字符)")
+    print(f"\n完整序列:")
+    print(decoded_full)
+    print(f"\n总长度: {len(decoded_full)} 字符")
 
     # 7. 分析 loss mask 的分布
     print("\n" + "=" * 80)
@@ -176,14 +180,11 @@ def main():
         loss_regions.append((start_idx, len(loss_mask)))
 
     print(f"\n找到 {len(loss_regions)} 个需要计算 loss 的区间:")
-    for idx, (start, end) in enumerate(loss_regions[:5]):  # 只显示前5个
+    for idx, (start, end) in enumerate(loss_regions):  # 显示所有区间
         region_tokens = input_ids[start:end]
         region_text = tokenizer.decode(region_tokens, skip_special_tokens=False)
         print(f"\n  区间 {idx + 1}: [{start}:{end}] (长度 {end - start})")
-        print(f"    文本预览: {region_text[:200]}...")
-
-    if len(loss_regions) > 5:
-        print(f"\n  ... 还有 {len(loss_regions) - 5} 个区间")
+        print(f"    完整文本: {region_text}")
 
     # 8. 统计信息
     print("\n" + "=" * 80)
@@ -199,11 +200,20 @@ def main():
     print("[8] 验证 enable_thinking 参数:")
     print("=" * 80)
     print(f"\n  当前样本 enable_thinking: {first_row['enable_thinking']}")
-    print(f"  检查解码文本中是否包含 thinking 标签:")
+    print(f"\n  说明:")
+    print(f"    - enable_thinking=True 时，tokenizer 会在 assistant 消息中渲染 <think> 标签")
+    print(f"    - enable_thinking=False 时，tokenizer 不会渲染 <think> 标签")
+    print(f"    - FixedMultiTurnSFTDataset 修复了原版 verl 逐条处理时 <think> 被丢弃的问题")
+    print(f"\n  检查解码文本中是否包含 thinking 标签:")
     print(f"    包含 '<thinking>': {'<thinking>' in decoded_full}")
     print(f"    包含 '</thinking>': {'</thinking>' in decoded_full}")
     print(f"    包含 '<think>': {'<think>' in decoded_full}")
     print(f"    包含 '</think>': {'</think>' in decoded_full}")
+
+    if first_row['enable_thinking']:
+        print(f"\n  预期: 应该包含 <think> 标签（因为 enable_thinking=True）")
+    else:
+        print(f"\n  预期: 不应该包含 <think> 标签（因为 enable_thinking=False）")
 
     print("\n" + "=" * 80)
     print("处理完成！")

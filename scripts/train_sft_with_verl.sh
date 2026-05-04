@@ -103,14 +103,14 @@ NUM_GPUS="${NUM_GPUS:-$VISIBLE_GPU_COUNT}"
 # Ulysses sequence parallel size。长 trajectory 全量微调时默认跨所有可见 GPU 切序列。
 SP_SIZE="${SP_SIZE:-$NUM_GPUS}"
 
-# 全局 batch size。435 条 SFT train 数据下，16 大约是 28 step/epoch。
+# 全局 batch size。1262 条 SFT train 数据下，16 大约是 79 step/epoch。
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-16}"
 
 # 每张 GPU 的 micro batch。长序列全量微调默认 1，优先保稳定。
 MICRO_BATCH_SIZE_PER_GPU="${MICRO_BATCH_SIZE_PER_GPU:-1}"
 
 # 单条 multi-turn trajectory 的最大 token 长度；当前数据 P90 约 18k，最长约 53k。
-MAX_LENGTH="${MAX_LENGTH:-20480}"
+MAX_LENGTH="${MAX_LENGTH:-32768}"
 
 # dynamic batch 每张 GPU 每个 micro batch 的 token 上限；默认等于 MAX_LENGTH，配合 SP 后实际可承载更长序列。
 MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-$MAX_LENGTH}"
@@ -143,7 +143,7 @@ FSDP_DTYPE="${FSDP_DTYPE:-bfloat16}"
 ENABLE_GRADIENT_CHECKPOINTING="${ENABLE_GRADIENT_CHECKPOINTING:-true}"
 
 # 是否把 optimizer state offload 到 CPU；默认关，OOM 时可设 true，速度会下降。
-OPTIMIZER_OFFLOAD="${OPTIMIZER_OFFLOAD:-false}"
+OPTIMIZER_OFFLOAD="${OPTIMIZER_OFFLOAD:-true}"
 
 # 是否把参数 offload 到 CPU；比 optimizer offload 更慢，只作为 OOM 兜底。
 PARAM_OFFLOAD="${PARAM_OFFLOAD:-false}"
@@ -156,7 +156,7 @@ TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-false}"
 USE_REMOVE_PADDING="${USE_REMOVE_PADDING:-true}"
 IGNORE_INPUT_IDS_MISMATCH="${IGNORE_INPUT_IDS_MISMATCH:-true}"
 SAVE_FREQ="${SAVE_FREQ:-after_each_epoch}"
-# 每 N 步验证一次；27 步/epoch 下 5 步一验可及时发现过拟合。
+# 每 N 步验证一次；79 步/epoch 下 5 步一验可及时发现过拟合。
 TEST_FREQ="${TEST_FREQ:-5}"
 
 # 只保存合并后的 HuggingFace 模型（bf16，8B 约 16GB），不存 FSDP 分片，不需要 resume。
@@ -259,7 +259,7 @@ cmd=(
     data.messages_key=messages
     data.tools_key=tools
     data.enable_thinking_key=enable_thinking
-    data.enable_thinking_default=false
+    data.enable_thinking_default=true
     data.custom_cls.path="$PROJECT_DIR/src/verl_sft_dataset_fix.py"
     data.custom_cls.name=FixedMultiTurnSFTDataset
     data.pad_mode="$PAD_MODE"
