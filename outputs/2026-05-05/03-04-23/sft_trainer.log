@@ -1,0 +1,26 @@
+[2026-05-05 03:04:29,083][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 234,
+[2026-05-05 03:04:29,714][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 234,
+[2026-05-05 03:04:30,085][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,088][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,106][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,215][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,263][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,281][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,320][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 
+[2026-05-05 03:04:30,416][/root/miniconda3/lib/python3.12/site-packages/verl/utils/dataset/multiturn_sft_dataset.py][WARNING] - MultiTurnSFTDataset apply_chat_template to each turn separately and concat `input_ids` as a whole sequence, which may not equal to apply_chat_template to whole messages at once.
+For example, Qwen Thinking series models add <think></think> tags to last turn, please check your tokenizer chat template settings.
+Set `ignore_input_ids_mismatch=True` to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids. 

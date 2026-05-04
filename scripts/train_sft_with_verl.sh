@@ -113,12 +113,12 @@ MICRO_BATCH_SIZE_PER_GPU="${MICRO_BATCH_SIZE_PER_GPU:-1}"
 MAX_LENGTH="${MAX_LENGTH:-32768}"
 
 # dynamic batch 每张 GPU 每个 micro batch 的 token 上限；默认等于 MAX_LENGTH，配合 SP 后实际可承载更长序列。
-MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-$MAX_LENGTH}"
+MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-16384}"
 
 # 超长样本处理策略。right 会截断极少数超过 MAX_LENGTH 的长 trajectory，避免默认长跑中途崩掉。
 TRUNCATION="${TRUNCATION:-right}"
 
-# 435 条小数据全量微调，2-3 epoch 让模型充分学习工具调用格式；低 LR 降低过拟合风险。
+# 1262 条数据全量微调，2-3 epoch 让模型充分学习工具调用格式；低 LR 降低过拟合风险。
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-3}"
 
 # 设置后覆盖 epoch 推导的 step 数，主要用于 smoke test，例如 TOTAL_TRAINING_STEPS=1。
@@ -144,9 +144,11 @@ ENABLE_GRADIENT_CHECKPOINTING="${ENABLE_GRADIENT_CHECKPOINTING:-true}"
 
 # 是否把 optimizer state offload 到 CPU；默认关，OOM 时可设 true，速度会下降。
 OPTIMIZER_OFFLOAD="${OPTIMIZER_OFFLOAD:-true}"
+# param_offload 也默认开启，配合 optimizer_offload 最大化节省显存。
+# 8B 全量微调 + 32K 长序列下，不 offload 参数极易在 loss.backward() OOM。
 
 # 是否把参数 offload 到 CPU；比 optimizer offload 更慢，只作为 OOM 兜底。
-PARAM_OFFLOAD="${PARAM_OFFLOAD:-false}"
+PARAM_OFFLOAD="${PARAM_OFFLOAD:-true}"
 
 NUM_WORKERS="${NUM_WORKERS:-4}"
 PAD_MODE="${PAD_MODE:-no_padding}"
@@ -156,8 +158,8 @@ TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-false}"
 USE_REMOVE_PADDING="${USE_REMOVE_PADDING:-true}"
 IGNORE_INPUT_IDS_MISMATCH="${IGNORE_INPUT_IDS_MISMATCH:-true}"
 SAVE_FREQ="${SAVE_FREQ:-after_each_epoch}"
-# 每 N 步验证一次；79 步/epoch 下 5 步一验可及时发现过拟合。
-TEST_FREQ="${TEST_FREQ:-5}"
+# 每 N 步验证一次；79 步/epoch 下 10 步一验可及时发现过拟合。
+TEST_FREQ="${TEST_FREQ:-10}"
 
 # 只保存合并后的 HuggingFace 模型（bf16，8B 约 16GB），不存 FSDP 分片，不需要 resume。
 # CHECKPOINT_LOAD_CONTENTS="${CHECKPOINT_LOAD_CONTENTS:-[model]}"
@@ -207,6 +209,8 @@ export OMP_NUM_THREADS="$(normalize_positive_int "${OMP_NUM_THREADS:-}" 4)"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-true}"
 # 禁用 torch.compile（dynamo），FSDP + 长序列场景下 JIT 编译兼容性不稳定
 export TORCHDYNAMO_DISABLE="${TORCHDYNAMO_DISABLE:-1}"
+# 启用 CUDA expandable segments，减少显存碎片导致的 OOM
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 # verl SFT trainer 日志级别：CRITICAL < ERROR < WARNING(verl默认) < INFO(脚本默认) < DEBUG
 export VERL_SFT_LOGGING_LEVEL="${VERL_SFT_LOGGING_LEVEL:-INFO}"
 # 把项目目录加入 Python 路径，让 torchrun 能 import 项目自定义模块（如 src/）

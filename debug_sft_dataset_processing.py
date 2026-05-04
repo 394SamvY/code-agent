@@ -51,11 +51,11 @@ def main():
         "messages_key": "messages",
         "tools_key": "tools",
         "enable_thinking_key": "enable_thinking",
-        "enable_thinking_default": False,
+        "enable_thinking_default": True,
         "pad_mode": "no_padding",  # 脚本默认值
-        "max_length": 20480,       # 脚本默认值
+        "max_length": 32768,       # 脚本默认值
         "truncation": "right",     # 脚本默认值
-        "ignore_input_ids_mismatch": True,  # 脚本默认值
+        "ignore_input_ids_mismatch": False,  # 脚本默认值
         "apply_chat_template_kwargs": {},
     })
 

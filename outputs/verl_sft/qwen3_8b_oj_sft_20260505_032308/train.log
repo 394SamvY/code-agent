@@ -1,0 +1,71 @@
+==== verl OJ-like multiturn SFT ====
+
+-- 路径 --
+  project_dir:          /root/autodl-tmp/code-agent
+  train_file:           /root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_train.parquet
+  val_file:             /root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_val.parquet
+  model_path:           /root/autodl-tmp/models/Qwen3-8B
+  save_path:            /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032308
+
+-- 训练参数 --
+  cuda_visible_devices: 0,1
+  num_gpus:             2
+  sp_size:              2
+  train_batch_size:     16
+  micro_batch_per_gpu:  1
+  max_length:           32768
+  max_token_len/gpu:    16384
+  truncation:           right
+  total_epochs:         3
+  total_training_steps: <by epochs>
+  lr:                   1e-5
+  weight_decay:         0.01
+  warmup_ratio:         0.03
+  finetune_mode:        full
+  fsdp_model_dtype:     bf16
+  fsdp_dtype:           bfloat16
+  grad_checkpointing:   true
+  optimizer_offload:    true
+  param_offload:        true
+  checkpoint_contents:  [hf_model]
+  max_ckpt_to_keep:     1
+
+start: 2026-05-05 03:23:08
+
+dataset len: 1262
+dataset len: 66
+dataset len: 1262
+dataset len: 66
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 130.01it/s]
+Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 95.79it/s]
+Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+[rank0]:[W505 03:23:19.595251083 ProcessGroupNCCL.cpp:5072] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+NCCL version 2.27.5+cuda12.9
+Qwen3ForCausalLM contains 8.19B parameters
+Before FSDP, memory allocated (GB): 0.00, memory reserved (GB): 0.00, device memory used/total (GB): 0.89/79.25
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+/root/miniconda3/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+After FSDP, memory allocated (GB): 7.63, memory reserved (GB): 12.99, device memory used/total (GB): 13.89/79.25
+Total steps: 234, num_warmup_steps: 7
+[2026-05-05 03:23:26,485][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 234,
+{'model': {'_target_': 'verl.workers.config.HFModelConfig', 'path': '/root/autodl-tmp/models/Qwen3-8B', 'hf_config_path': None, 'tokenizer_path': None, 'use_shm': False, 'trust_remote_code': False, 'custom_chat_template': None, 'external_lib': None, 'override_config': {}, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': True, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear', 'exclude_modules': None, 'lora_adapter_path': None, 'use_liger': False, 'use_fused_kernels': False, 'fused_kernel_options': {'impl_backend': 'torch'}, 'tiled_mlp': {'enabled': False, 'num_shards': 4}, 'mtp': {'_target_': 'verl.workers.config.MtpConfig', 'enable': False, 'enable_train': False, 'enable_rollout': False, 'detach_encoder': False, 'mtp_loss_scaling_factor': 0.1, 'speculative_algorithm': 'EAGLE', 'speculative_num_steps': 3, 'speculative_eagle_topk': 1, 'speculative_num_draft_tokens': 4, 'method': 'mtp', 'num_speculative_tokens': 1}}, 'engine': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'wrap_policy': {'min_num_params': 0}, 'param_offload': True, 'optimizer_offload': True, 'offload_policy': False, 'reshard_after_forward': True, 'fsdp_size': -1, 'forward_prefetch': False, 'model_dtype': 'bf16', 'use_orig_params': False, 'seed': 42, 'full_determinism': False, 'ulysses_sequence_parallel_size': 2, 'entropy_from_logits_with_chunking': False, 'use_torch_compile': True, 'entropy_checkpointing': False, 'forward_only': False, 'strategy': 'fsdp', 'dtype': 'bfloat16', 'qat': {'_target_': 'verl.workers.config.QATEngineConfig', 'enable': False, 'mode': 'w4a16', 'group_size': 16, 'ignore_patterns': ['lm_head', 'embed_tokens', 're:.*mlp.gate$'], 'activation_observer': 'static_minmax', 'quantization_config_path': None}}, 'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig', 'optimizer': 'AdamW', 'optimizer_impl': 'torch.optim', 'lr': 1e-05, 'lr_warmup_steps_ratio': 0.03, 'total_training_steps': -1, 'weight_decay': 0.01, 'lr_warmup_steps': -1, 'betas': [0.9, 0.999], 'clip_grad': 1.0, 'min_lr_ratio': 0.0, 'num_cycles': 0.5, 'lr_scheduler_type': 'constant', 'zero_indexed_step': True, 'warmup_style': None, 'override_optimizer_config': None}, 'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig', 'tool': 'torch', 'enable': False, 'all_ranks': False, 'ranks': [], 'save_path': 'outputs/profile', 'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig', 'contents': [], 'level': 'level0', 'analysis': True, 'discrete': False, 'name': 'npu'}, 'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig', 'discrete': '${oc.select:global_profiler.global_tool_config.nsys.discrete}', 'name': 'nsight'}, 'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig', 'contents': [], 'discrete': False, 'name': 'torch'}, 'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig', 'trace_alloc_max_entries': '${oc.select:global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries,100000}', 'stack_depth': '${oc.select:global_profiler.global_tool_config.torch_memory.stack_depth,32}', 'name': 'torch_memory'}}}, 'data': {'train_batch_size': 16, 'micro_batch_size_per_gpu': 1, 'max_token_len_per_gpu': 16384, 'use_dynamic_bsz': True, 'train_files': '/root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_train.parquet', 'val_files': '/root/autodl-tmp/code-agent/data/verl/sft/sft_accepted_val.parquet', 'train_max_samples': -1, 'val_max_samples': -1, 'messages_key': 'messages', 'tools_key': 'tools', 'enable_thinking_key': 'enable_thinking', 'enable_thinking_default': True, 'pad_mode': 'no_padding', 'max_length': 32768, 'truncation': 'right', 'balance_dp_token': False, 'custom_cls': {'path': '/root/autodl-tmp/code-agent/src/verl_sft_dataset_fix.py', 'name': 'FixedMultiTurnSFTDataset'}, 'use_shm': False, 'apply_chat_template_kwargs': {}, 'num_workers': 4, 'ignore_input_ids_mismatch': True}, 'checkpoint': {'_target_': 'verl.trainer.config.CheckpointConfig', 'save_contents': ['hf_model'], 'load_contents': '${checkpoint.save_contents}', 'mbridge_config': {}}, 'trainer': {'default_local_dir': '/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032308', 'default_hdfs_dir': None, 'project_name': 'code-agent-sft', 'experiment_name': 'qwen3_8b_oj_sft_20260505_032308', 'total_epochs': 3, 'total_training_steps': None, 'logger': 'console', 'seed': 1, 'save_freq': 'after_each_epoch', 'test_freq': 10, 'max_ckpt_to_keep': 1, 'resume_mode': 'disable', 'resume_from_path': None, 'device': 'cuda', 'nnodes': 1, 'n_gpus_per_node': 1, 'profile_interval': [-1, -1]}, 'global_profiler': {'global_tool_config': {'nsys': {'worker_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph', 'capture-range': 'cudaProfilerApi', 'capture-range-end': None, 'kill': 'none'}}}}}
+[2026-05-05 03:23:26,492][/root/miniconda3/lib/python3.12/site-packages/verl/trainer/sft_trainer.py][INFO] - [Rank 0] Total training steps: 234,
+Epoch 1/3:   0%|          | 0/78 [00:00<?, ?it/s]NCCL version 2.27.5+cuda12.9
+[rank1]:W0505 03:23:28.329000 13137 site-packages/torch/fx/_symbolic_trace.py:52] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank0]:W0505 03:23:28.389000 13136 site-packages/torch/fx/_symbolic_trace.py:52] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+step:1 - train/loss:1.1026601791381836 - train/grad_norm:8.9375 - train/lr:1.4285714285714286e-06 - train/mfu:0.4351320739523487 - train/global_tokens:122268 - train/total_tokens(B):0.000122268
+Epoch 1/3:   1%|▏         | 1/78 [00:37<48:01, 37.42s/it]step:2 - train/loss:1.1647332906723022 - train/grad_norm:9.6875 - train/lr:2.8571428571428573e-06 - train/mfu:0.4351599539190707 - train/global_tokens:150475 - train/total_tokens(B):0.000272743
+Epoch 1/3:   3%|▎         | 2/78 [01:15<48:06, 37.98s/it]step:3 - train/loss:0.6701005697250366 - train/grad_norm:5.75 - train/lr:4.2857142857142855e-06 - train/mfu:0.43622691426632626 - train/global_tokens:224780 - train/total_tokens(B):0.000497523
+Epoch 1/3:   4%|▍         | 3/78 [02:15<1:00:06, 48.09s/it]step:4 - train/loss:0.8749442100524902 - train/grad_norm:7.8125 - train/lr:5.7142857142857145e-06 - train/mfu:0.412435414532254 - train/global_tokens:84773 - train/total_tokens(B):0.000582296
+Epoch 1/3:   5%|▌         | 4/78 [02:38<46:43, 37.88s/it]  

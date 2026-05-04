@@ -55,13 +55,34 @@ from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 
 
 class FixedMultiTurnSFTDataset(MultiTurnSFTDataset):
-    """与 MultiTurnSFTDataset 完全一致，仅修复 chat_template 的 `>` → `>=`。"""
+    """Fix two Qwen3 chat_template issues for per-turn SFT tokenization.
+
+    Fix 1: ``>`` → ``>=``
+      In per-turn mode, each assistant message is the only message, so
+      loop.index0 == last_query_index == 0.  The original ``>`` misses it.
+      With ``>=``, the template treats it as if it follows the last user query
+      and renders the <think> wrapper.
+
+    Fix 2: ``loop.last or (not loop.last and reasoning_content)`` → ``True``
+      Even after fix 1, the template has a second guard: for non-last
+      assistant messages it only renders <think> when reasoning_content is
+      non-empty.  In per-turn mode every message is ``loop.last``, so
+      <think> always fires.  When verl's sanity_check applies the template
+      to the full conversation at once, empty-reasoning assistants skip
+      <think> — causing the per-turn concat and full-conversation token
+      sequences to diverge.  Forcing ``True`` makes both paths consistent.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         template = self.tokenizer.chat_template
         if isinstance(template, str):
-            self.tokenizer.chat_template = template.replace(
+            template = template.replace(
                 "loop.index0 > ns.last_query_index",
                 "loop.index0 >= ns.last_query_index",
             )
+            template = template.replace(
+                "loop.last or (not loop.last and reasoning_content)",
+                "True",
+            )
+            self.tokenizer.chat_template = template
