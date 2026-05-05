@@ -51,6 +51,10 @@ async def _test_public_test_count_persists_across_instances():
 
     assert result["verdict"] == "public_test_limit_exceeded"
     assert result["public_test_call_count"] == 2
+    assert result["terminal"] is True
+    assert result["terminal_reason"] == "public_test_limit_exhausted"
+    assert agent_data.code_agent_terminal is True
+    assert agent_data.code_agent_terminal_reason == "public_test_limit_exhausted"
     assert agent_data.code_agent_oj_tool_state["public_test_call_count"] == 2
     assert "code_agent_oj_tool_state" not in agent_data.extra_fields
 

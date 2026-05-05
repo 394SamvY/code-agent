@@ -78,10 +78,18 @@ def to_messages(
             tool_call_id = f"call_{tool_call_index}"
             tool_call_index += 1
             pending_tool_call_id = tool_call_id
+            content = None
+            if (
+                messages
+                and messages[-1].get("role") == "assistant"
+                and "tool_calls" not in messages[-1]
+                and messages[-1].get("content")
+            ):
+                content = messages.pop()["content"]
             messages.append(
                 {
                     "role": "assistant",
-                    "content": None,
+                    "content": content,
                     "tool_calls": [
                         {
                             "id": tool_call_id,

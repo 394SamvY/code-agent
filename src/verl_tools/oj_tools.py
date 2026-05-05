@@ -107,6 +107,15 @@ class _OJBaseTool(BaseTool):
         session_state["public_test_call_count"] = int(inst["public_test_call_count"])
         session_state["submission_count"] = int(inst["submission_count"])
 
+        if result.get("verdict") == VERDICT_PUBLIC_TEST_LIMIT_EXCEEDED:
+            reason = "public_test_limit_exhausted"
+            result["terminal"] = True
+            result["terminal_reason"] = reason
+            if agent_data is not None:
+                setattr(agent_data, _TERMINAL_KEY, True)
+                setattr(agent_data, _TERMINAL_REASON_KEY, reason)
+            return
+
         if result.get("action") != "submit_solution":
             return
 

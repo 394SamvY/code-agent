@@ -13,6 +13,7 @@
 #   MAX_PROMPT_LENGTH=4096 MAX_RESPONSE_LENGTH=8192 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 #   CUDA_VISIBLE_DEVICES=0,1 bash scripts/evaluate_baseline_with_verl.sh livecodebench_test
 #   VAL_MAX_SAMPLES=8 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
+#   VAL_DO_SAMPLE=true VAL_TEMPERATURE=0.6 bash scripts/evaluate_baseline_with_verl.sh codecontests_test
 
 set -euo pipefail
 
@@ -20,7 +21,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 DATASET_ARG="${1:-codecontests_test}"
-MODEL_PATH="${2:-/root/autodl-tmp/models/Qwen3-8B}"
+MODEL_PATH="${2:-/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface}"
 
 CONFIG_PATH="$PROJECT_DIR/configs/verl"
 CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
@@ -88,24 +89,25 @@ MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-4096}"
 MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-28672}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-16}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-32}"
 VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-1000}"
 TRUNCATION="${TRUNCATION:-middle}"
 FILTER_OVERLONG_PROMPTS="${FILTER_OVERLONG_PROMPTS:-true}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
-AGENT_WORKERS="${AGENT_WORKERS:-16}"
+AGENT_WORKERS="${AGENT_WORKERS:-32}"
 FSDP_MODEL_DTYPE="${FSDP_MODEL_DTYPE:-bf16}"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.82}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.88}"
 ROLLOUT_TP="${ROLLOUT_TP:-1}"
-MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-32768}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-49152}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-48}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 LOG_VAL_GENERATIONS="${LOG_VAL_GENERATIONS:-1}"
 TRAIN_STUB_FILE="${TRAIN_STUB_FILE:-$PROJECT_DIR/data/verl/codecontests_valid.parquet}"
-VAL_TEMPERATURE="${VAL_TEMPERATURE:-0.6}"
+VAL_TEMPERATURE="${VAL_TEMPERATURE:-0}"
 VAL_TOP_P="${VAL_TOP_P:-0.95}"
 VAL_TOP_K="${VAL_TOP_K:-20}"
-VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-true}"
+VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-false}"
+ENABLE_THINKING="${ENABLE_THINKING:-true}"
 
 if [ "$NUM_GPUS" -gt "$VISIBLE_GPU_COUNT" ]; then
     echo "[ERROR] NUM_GPUS=$NUM_GPUS exceeds visible GPU count $VISIBLE_GPU_COUNT from CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES_RESOLVED"
@@ -214,6 +216,7 @@ echo "  val_temperature:      $VAL_TEMPERATURE  (采样温度，0=贪心)"
 echo "  val_top_p:            $VAL_TOP_P  (nucleus sampling)"
 echo "  val_top_k:            $VAL_TOP_K  (top-k sampling)"
 echo "  val_do_sample:        $VAL_DO_SAMPLE  (true=采样, false=贪心解码)"
+echo "  enable_thinking:      $ENABLE_THINKING  (true=正常 Qwen3 思考模式；false=预填空 think，适合 SFT tool-call smoke)"
 
 echo ""
 echo "-- GPU 吞吐（偶尔调）--"
@@ -265,7 +268,7 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     data.custom_cls.name=OJLikeRLHFDataset \
     data.tool_config_path=configs/verl/tool_config.yaml \
     data.return_raw_chat=true \
-    data.apply_chat_template_kwargs.enable_thinking=true \
+    data.apply_chat_template_kwargs.enable_thinking="$ENABLE_THINKING" \
     actor_rollout_ref.model.path="$MODEL_PATH" \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.fsdp_config.model_dtype="$FSDP_MODEL_DTYPE" \
@@ -282,6 +285,8 @@ python3 "$PROJECT_DIR/scripts/verl_main_wrapper.py" \
     actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.agent.num_workers="$AGENT_WORKERS" \
+    actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent \
+    actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl/code_agent_loop.yaml \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.rollout.val_kwargs.temperature="$VAL_TEMPERATURE" \
     actor_rollout_ref.rollout.val_kwargs.top_p="$VAL_TOP_P" \

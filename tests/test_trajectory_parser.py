@@ -37,18 +37,18 @@ Now I will submit.
 
     assert [message["role"] for message in messages] == [
         "assistant",
-        "assistant",
         "tool",
         "assistant",
-        "assistant",
     ]
-    assert messages[1]["tool_calls"][0]["function"]["name"] == "run_public_tests"
+    assert messages[0]["content"] == "I will test the program."
+    assert messages[0]["tool_calls"][0]["function"]["name"] == "run_public_tests"
     assert (
-        json.loads(messages[1]["tool_calls"][0]["function"]["arguments"])["code"]
+        json.loads(messages[0]["tool_calls"][0]["function"]["arguments"])["code"]
         == "print(1)"
     )
-    assert "wrong_answer" in messages[2]["content"]
-    assert messages[4]["tool_calls"][0]["function"]["name"] == "submit_solution"
+    assert "wrong_answer" in messages[1]["content"]
+    assert messages[2]["content"] == "Now I will submit."
+    assert messages[2]["tool_calls"][0]["function"]["name"] == "submit_solution"
 
     print("[PASS] test_to_messages_extracts_ordered_tool_messages")
 
@@ -120,16 +120,15 @@ run_public_tests: accepted. 1/1 tests passed.
 
     assert [message["role"] for message in messages] == [
         "assistant",
-        "assistant",
         "tool",
     ]
-    assert messages[1]["content"] is None
-    assert messages[1]["tool_calls"][0]["id"] == "call_0"
-    assert messages[1]["tool_calls"][0]["function"]["name"] == "run_public_tests"
-    assert json.loads(messages[1]["tool_calls"][0]["function"]["arguments"]) == {
+    assert messages[0]["content"] == "Thinking."
+    assert messages[0]["tool_calls"][0]["id"] == "call_0"
+    assert messages[0]["tool_calls"][0]["function"]["name"] == "run_public_tests"
+    assert json.loads(messages[0]["tool_calls"][0]["function"]["arguments"]) == {
         "code": "print(1)"
     }
-    assert messages[2]["tool_call_id"] == "call_0"
+    assert messages[1]["tool_call_id"] == "call_0"
 
     print("[PASS] test_to_messages_converts_tool_calls_and_responses")
 

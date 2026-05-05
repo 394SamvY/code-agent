@@ -58,6 +58,8 @@ actor_rollout_ref:
     n: 4
     agent:
       num_workers: 4
+      default_agent_loop: code_agent_tool_agent
+      agent_loop_config_path: configs/verl/code_agent_loop.yaml
     multi_turn:
       enable: true
       tool_config_path: configs/verl/tool_config.yaml
