@@ -1,55 +1,58 @@
 # 项目状态
 
-更新日期：2026-05-01
+更新日期：2026-05-06
 
-## 当前阶段
+## 项目背景
 
-eval 环境已验证正确，进入训练方案设计阶段。
+- 项目目标：训练 OJ-like code agent，解完整 stdin/stdout 竞赛编程题。
+- 训练数据：`CodeContests`。
+- 最终测试：`LiveCodeBench`。
+- 环境动作：`run_public_tests` 和 `submit_solution`。
+- 评测入口：`scripts/evaluate_baseline_with_verl.sh`，复用 verl 原生 validation / `ToolAgentLoop` 路径。
+- RL链路待讨论。
 
-## eval 结论
+## 当前状态
 
-三组 smoke（mr=8192/16384/16384+94GB）跑完，结论：Qwen3-8B base model `enable_thinking=true` 下 tool-call rate = 0%。模型以 `<think>` 开始分析问题但从不闭合、从不调用工具。预算越大 thinking 越长但不改变行为。eval 环境本身正确，样本正常启停、无 OOM、0.jsonl 完整写出。
+OJ-like v1 的数据、tool、reward 和 verl validation 评测链路已经接通；当前主要 blocker 是评测效率太低，因此下一步应先把 ./scripts/evaluate_baseline_with_verl.sh 的评测链路效率提上去，要求完整评测 code-agent/data/verl/codecontests_test.parquet 和 code-agent/data/verl/livecodebench_test.parquet 各不超过两个小时！
 
-详细数据见 `docs/debug/2026-05-01-baseline-smoke-results.md`。
+TODO
+1. 提升评测脚本的效率
+2. 当前使用基础模型应该也能产生tool_call,所以sft给模型带来的提升有待量化，比如acc和平均tool_call的轮次等，待优化完成评测脚本后执行。
 
-## 当前主线
 
-- 项目：OJ-like code agent
-- 训练数据：`CodeContests`，最终测试：`LiveCodeBench`
-- 环境工具：`run_public_tests`、`submit_solution`
-- eval 入口：`scripts/evaluate_baseline_with_verl.sh`，使用 verl 原生 `ToolAgentLoop`
-- 已废弃：全部 thinking budget 控制，详见 `docs/debug/2026-05-01-thinking-budget-detour.md`
+## 当前评测链路效率分析
 
-## 代码状态
+最近的有效评测测试在目录 `outputs/verl_baseline_eval/`下。当前保留了三次 16 样本 smoke：
 
-- `src/verl_runtime_patch.py`：numpy JSON 序列化 + validation 增量 dump
-- `src/verl_dataset_adapter.py`：decode JSON-string parquet，按 token 长度过滤 overlong prompt
-- `src/verl_tools/oj_tools.py`：OJ 工具，state 持久化计数，accepted / submission-limit 标记 terminal
-- `src/env/tools.py`：judge 首错即停，`run_public_tests` 上限 15，`submit_solution` 上限 5
-- `src/trajectory_parser.py`：verl output → 标准 `messages`
+| run | start | 耗时 | 样本数 | score/acc | 平均 tool calls | 平均 turns | 500 题外推 | 611 题外推 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `smoke_sft_qwen3_8b_toolagent_think_2gpu_16_fast1` | 2026-05-05 23:07:51 | 18m37s | 16 | 0.0% | 4.375 | 10.25 | 9.7h | 11.8h |
+| `smoke_sft_qwen3_8b_toolagent_think_2gpu_16_test2` | 2026-05-05 23:40:30 | 22m38s | 16 | 0.0% acc / 0.825% score | 5.8125 | 13.375 | 11.8h | 14.4h |
+| `smoke_sft_qwen3_8b_toolagent_think_2gpu_16_test3` | 2026-05-06 00:15:18 | 20m31s | 16 | 31.25% | 3.4375 | 8.75 | 10.7h | 13.1h |
 
-## 待讨论：SFT warm-start 方案
+这三次 smoke 的共同配置：
 
-冷启动问题：base model 从不输出 `</think>` 和 `<tool_call>`，全部 reward = 0，GRPO 无梯度可追。
+- dataset：`codecontests_test`
+- model：`/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface`
+- GPU：2 卡，`CUDA_VISIBLE_DEVICES=0,1`
+- rollout backend：SGLang
+- `VAL_MAX_SAMPLES=16`
+- `MAX_PROMPT_LENGTH=4096`
+- `MAX_RESPONSE_LENGTH=28672`
+- `MAX_MODEL_LEN=32768`
+- `VAL_TEMPERATURE=0`
+- `VAL_DO_SAMPLE=false`
+- `ENABLE_THINKING=true`
+- `VAL_BATCH_SIZE=32`
+- `AGENT_WORKERS=32`
+- `MAX_NUM_SEQS=48`
+- `MAX_NUM_BATCHED_TOKENS=49152`
+- `GPU_MEMORY_UTILIZATION=0.88`
 
-当前 SFT warm-start 提案见 `docs/decisions/2026-05-01-sft-warm-start-proposal.md`，核心思路：
+关键结论：
 
-1. teacher 模型（更强的模型）在 CodeContests train 上按 OJ 协议生成正确 trajectory
-2. 用这些 trajectory 对 Qwen3-8B 做 LoRA SFT，教会模型 think → `</think>` → `<tool_call>` 的基本行为
-3. SFT 后 eval 验证 tool-call rate > 0
-4. 再上 GRPO + 过程奖励精调
+- 当前评测链路能完整跑完，`generations/partial_0.jsonl` 和 `generations/0.jsonl` 都能正常写出。
+- 模型已经能产生 tool call，旧的“tool-call rate = 0%”结论是因为评测脚本中没有显式的配置`actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent ` 导致错误的使用了 verl 默认的single_turn_agent，所以没有一个工具调用。
+- 评测效率远达不到目标：按最新 run 外推，500 条 CodeContests 约 10.7 小时，611 条 LiveCodeBench 约 13.1 小时。
+- 当前首要 blocker 是吞吐和单条 trajectory 过长，而不是 eval 链路能不能跑通。
 
-待定问题：
-
-- teacher 模型选哪个？生成多少条 trajectory？
-- SFT 具体怎么训？（LoRA rank、epoch、mask 策略）
-- SFT 后是否需要先验证再上 GRPO？验证标准是什么？
-- 是否需要先在 CodeContests valid 上试点，还是直接 train 全量生成？
-
-## 文档入口
-
-- `docs/debug/2026-05-01-baseline-smoke-results.md`：三组 smoke 详细分析
-- `docs/debug/2026-05-01-thinking-budget-detour.md`：thinking budget 弯路总结
-- `docs/decisions/2026-05-01-sft-warm-start-proposal.md`：SFT warm-start 提案
-- `docs/specs/env_protocol.md`：OJ-like 环境协议
-- `docs/operations/gpu_eval_tuning.md`：2xA800 调参记录
