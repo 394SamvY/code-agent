@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -38,6 +40,10 @@ _CODE_AGENT_DUMP_ONLY_KEYS = (
 )
 
 
+def _now_for_log() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _value_at(values: Any, index: int, default: Any = None) -> Any:
     try:
         if values is None:
@@ -45,6 +51,23 @@ def _value_at(values: Any, index: int, default: Any = None) -> Any:
         return values[index]
     except Exception:
         return default
+
+
+def _dataproto_len(data: Any) -> int:
+    batch = getattr(data, "batch", None)
+    if batch is not None:
+        try:
+            return len(batch)
+        except Exception:
+            pass
+    non_tensor_batch = getattr(data, "non_tensor_batch", None)
+    if isinstance(non_tensor_batch, dict):
+        for values in non_tensor_batch.values():
+            try:
+                return len(values)
+            except Exception:
+                continue
+    return 0
 
 
 def _messages_for_record(output: str, raw_prompt: Any, reward_extra_infos: dict[str, list[Any]], index: int) -> list:
@@ -72,6 +95,149 @@ def _trace_fields_for_record(reward_extra_infos: dict[str, list[Any]], index: in
             else _value_at(reward_extra_infos.get("code_agent_tool_tail_chars"), index, 0)
         ),
     }
+
+
+def _message_text_for_token_count(message: dict[str, Any]) -> str:
+    parts: list[str] = []
+    content = message.get("content")
+    if content:
+        parts.append(str(content))
+    for tool_call in message.get("tool_calls") or []:
+        if not isinstance(tool_call, dict):
+            continue
+        function = tool_call.get("function") or {}
+        if isinstance(function, dict):
+            parts.append(str(function.get("name") or ""))
+            parts.append(str(function.get("arguments") or ""))
+        else:
+            parts.append(str(tool_call))
+    return "\n".join(part for part in parts if part)
+
+
+def _count_tokens(tokenizer: Any, text: str) -> int:
+    if not text:
+        return 0
+    return len(tokenizer.encode(text, add_special_tokens=False))
+
+
+def _percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * q))))
+    return float(ordered[index])
+
+
+def _mean(values: list[float]) -> float:
+    return float(sum(values) / len(values)) if values else 0.0
+
+
+def _summarize_validation_records(
+    *,
+    tokenizer: Any,
+    messages_per_sample: list[list[dict[str, Any]]],
+    output_token_counts: list[int],
+    scores: list[float],
+    reward_extra_infos: dict[str, list[Any]],
+    response_length: int,
+) -> dict[str, Any]:
+    assistant_tokens: list[int] = []
+    tool_response_tokens: list[int] = []
+    for messages in messages_per_sample:
+        sample_assistant_tokens = 0
+        sample_tool_tokens = 0
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            text = _message_text_for_token_count(message)
+            if role == "assistant":
+                sample_assistant_tokens += _count_tokens(tokenizer, text)
+            elif role == "tool":
+                sample_tool_tokens += _count_tokens(tokenizer, text)
+        assistant_tokens.append(sample_assistant_tokens)
+        tool_response_tokens.append(sample_tool_tokens)
+
+    traces = reward_extra_infos.get("code_agent_trace", [])
+    terminal_reasons: Counter[str] = Counter()
+    tool_calls: list[int] = []
+    tool_wall_seconds: list[float] = []
+    judge_runtime_seconds: list[float] = []
+    for i in range(len(messages_per_sample)):
+        trace = traces[i] if i < len(traces) and isinstance(traces[i], dict) else {}
+        reason = trace.get("terminal_reason") or _value_at(
+            reward_extra_infos.get("code_agent_terminal_reason"),
+            i,
+            "unknown",
+        )
+        terminal_reasons[str(reason or "unknown")] += 1
+        tool_calls.append(int(trace.get("num_tool_calls", 0) or 0))
+        tool_wall_seconds.append(float(trace.get("tool_wall_seconds", 0.0) or 0.0))
+        judge_runtime_seconds.append(float(trace.get("judge_runtime_seconds", 0.0) or 0.0))
+
+    response_cap_hits = sum(1 for value in output_token_counts if value >= response_length)
+    assistant_cap_hits = sum(1 for value in assistant_tokens if value >= response_length)
+    return {
+        "samples": len(messages_per_sample),
+        "score_mean": _mean([float(score) for score in scores]),
+        "assistant_tokens_total": sum(assistant_tokens),
+        "assistant_tokens_mean": _mean(assistant_tokens),
+        "assistant_tokens_p50": _percentile(assistant_tokens, 0.50),
+        "assistant_tokens_p90": _percentile(assistant_tokens, 0.90),
+        "assistant_tokens_max": max(assistant_tokens) if assistant_tokens else 0,
+        "tool_response_tokens_total": sum(tool_response_tokens),
+        "tool_response_tokens_mean": _mean(tool_response_tokens),
+        "output_tokens_total": sum(output_token_counts),
+        "output_tokens_mean": _mean(output_token_counts),
+        "response_cap_hits": response_cap_hits,
+        "assistant_cap_hits": assistant_cap_hits,
+        "response_length": response_length,
+        "tool_calls_mean": _mean(tool_calls),
+        "tool_calls_max": max(tool_calls) if tool_calls else 0,
+        "tool_wall_seconds_total": sum(tool_wall_seconds),
+        "tool_wall_seconds_mean": _mean(tool_wall_seconds),
+        "judge_runtime_seconds_total": sum(judge_runtime_seconds),
+        "judge_runtime_seconds_mean": _mean(judge_runtime_seconds),
+        "terminal_reasons": dict(sorted(terminal_reasons.items())),
+    }
+
+
+def _format_summary(prefix: str, summary: dict[str, Any], elapsed_seconds: float | None = None) -> str:
+    pieces = [
+        f"{prefix}",
+        f"ts={_now_for_log()}",
+        f"samples={summary['samples']}",
+    ]
+    if elapsed_seconds is not None:
+        pieces.append(f"elapsed_s={elapsed_seconds:.1f}")
+        if elapsed_seconds > 0:
+            pieces.append(f"assistant_tok_s={summary['assistant_tokens_total'] / elapsed_seconds:.1f}")
+    pieces.extend(
+        [
+            f"score_mean={summary['score_mean']:.4f}",
+            f"assistant_tok_total={summary['assistant_tokens_total']}",
+            f"assistant_tok_mean={summary['assistant_tokens_mean']:.1f}",
+            f"assistant_tok_p50={summary['assistant_tokens_p50']:.0f}",
+            f"assistant_tok_p90={summary['assistant_tokens_p90']:.0f}",
+            f"assistant_tok_max={summary['assistant_tokens_max']}",
+            f"tool_resp_tok_mean={summary['tool_response_tokens_mean']:.1f}",
+            f"output_tok_mean={summary['output_tokens_mean']:.1f}",
+            (
+                f"response_cap_hits={summary['response_cap_hits']}/{summary['samples']}"
+                f"@{summary['response_length']}"
+            ),
+            (
+                f"assistant_cap_hits={summary['assistant_cap_hits']}/{summary['samples']}"
+                f"@{summary['response_length']}"
+            ),
+            f"tool_calls_mean={summary['tool_calls_mean']:.2f}",
+            f"tool_calls_max={summary['tool_calls_max']}",
+            f"tool_wall_s_total={summary['tool_wall_seconds_total']:.1f}",
+            f"judge_runtime_s_total={summary['judge_runtime_seconds_total']:.1f}",
+            f"terminal_reasons={json.dumps(summary['terminal_reasons'], ensure_ascii=False, sort_keys=True)}",
+        ]
+    )
+    return "[code-agent][eval] " + " ".join(pieces)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -274,10 +440,23 @@ def _install_validation_partial_dump_patch() -> None:
         sample_scores = []
         sample_turns = []
         sample_uids = []
+        sample_messages = []
+        sample_output_token_counts = []
+        validation_started_at = time.perf_counter()
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
+        response_length = int(self.config.actor_rollout_ref.rollout.response_length)
+        print(
+            "[code-agent][eval] "
+            f"validation_start ts={_now_for_log()} "
+            f"val_batches={len(self.val_dataloader)} "
+            f"agent_workers={self.config.actor_rollout_ref.rollout.agent.num_workers} "
+            f"response_length={response_length} "
+            f"validation_data_dir={val_data_dir}"
+        )
 
         # ── batch 循环 ──────────────────────────────────────────────
         for batch_index, test_data in enumerate(self.val_dataloader):
+            batch_started_at = time.perf_counter()
             test_batch = DataProto.from_single_dict(test_data)
 
             # 如果数据中没有 uid，生成一个随机 UUID，方便后续追踪
@@ -315,9 +494,20 @@ def _install_validation_partial_dump_patch() -> None:
             # pad 到 agent worker 数量的整数倍，确保 batch 能被均匀分发
             size_divisor = self.config.actor_rollout_ref.rollout.agent.num_workers
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, size_divisor)
+            print(
+                "[code-agent][eval] "
+                f"batch_start ts={_now_for_log()} "
+                f"batch_index={batch_index} "
+                f"samples={_dataproto_len(test_batch)} "
+                f"padded_samples={_dataproto_len(test_gen_batch_padded)} "
+                f"pad_size={pad_size} "
+                f"size_divisor={size_divisor}"
+            )
+            generation_started_at = time.perf_counter()
             test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(
                 test_gen_batch_padded
             )
+            generation_seconds = time.perf_counter() - generation_started_at
 
             if self.use_rm and "rm_scores" not in test_output_gen_batch_padded.batch.keys():
                 self.checkpoint_manager.sleep_replicas()
@@ -326,10 +516,20 @@ def _install_validation_partial_dump_patch() -> None:
                 self.checkpoint_manager.update_weights(self.global_steps)
 
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
-            print("validation generation end")
+            print(
+                "[code-agent][eval] "
+                f"batch_generation_end ts={_now_for_log()} "
+                f"batch_index={batch_index} "
+                f"generation_s={generation_seconds:.1f}"
+            )
 
             # ── 增量 dump：解析 batch 结果，立即追加到 partial_0.jsonl ──
             output_ids = test_output_gen_batch.batch["responses"]
+            pad_token_id = self.tokenizer.pad_token_id
+            output_token_counts = [
+                int((ids != pad_token_id).sum().item()) for ids in output_ids
+            ]
+            sample_output_token_counts.extend(output_token_counts)
             output_texts = [
                 self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids
             ]
@@ -345,7 +545,9 @@ def _install_validation_partial_dump_patch() -> None:
             sample_inputs.extend(input_texts)
             sample_uids.extend(test_batch.non_tensor_batch["uid"])
 
+            reward_started_at = time.perf_counter()
             reward_tensor, reward_extra_info = extract_reward(test_batch)
+            reward_seconds = time.perf_counter() - reward_started_at
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
 
@@ -373,6 +575,33 @@ def _install_validation_partial_dump_patch() -> None:
                     reward_extra_infos_dict[key] = []
                 reward_extra_infos_dict[key].extend(values_list)
 
+            batch_messages = [
+                _messages_for_record(
+                    output,
+                    raw_prompts[i] if i < len(raw_prompts) else None,
+                    batch_reward_extra_infos,
+                    i,
+                )
+                for i, output in enumerate(output_texts)
+            ]
+            sample_messages.extend(batch_messages)
+            batch_summary = _summarize_validation_records(
+                tokenizer=self.tokenizer,
+                messages_per_sample=batch_messages,
+                output_token_counts=output_token_counts,
+                scores=scores,
+                reward_extra_infos=batch_reward_extra_infos,
+                response_length=response_length,
+            )
+            print(
+                _format_summary(
+                    f"batch_summary batch_index={batch_index} generation_s={generation_seconds:.1f} "
+                    f"reward_s={reward_seconds:.1f}",
+                    batch_summary,
+                    elapsed_seconds=time.perf_counter() - batch_started_at,
+                )
+            )
+
             # ← 在这里增量写出，每个 batch 完成后立刻落盘
             _append_partial_generations(
                 self,
@@ -385,6 +614,11 @@ def _install_validation_partial_dump_patch() -> None:
                 dump_path=val_data_dir,
                 batch_index=batch_index,
             )
+            print(
+                "[code-agent][eval] "
+                f"partial_dump_done ts={_now_for_log()} "
+                f"batch_index={batch_index} path={val_data_dir}"
+            )
             # ── 增量 dump 结束 ──
 
             if "__num_turns__" in test_batch.non_tensor_batch:
@@ -395,6 +629,16 @@ def _install_validation_partial_dump_patch() -> None:
             )
 
         # ── 所有 batch 完成后 ──
+        validation_seconds = time.perf_counter() - validation_started_at
+        final_summary = _summarize_validation_records(
+            tokenizer=self.tokenizer,
+            messages_per_sample=sample_messages,
+            output_token_counts=sample_output_token_counts,
+            scores=sample_scores,
+            reward_extra_infos=reward_extra_infos_dict,
+            response_length=response_length,
+        )
+        print(_format_summary("validation_summary", final_summary, elapsed_seconds=validation_seconds))
 
         self._maybe_log_val_generations(
             inputs=sample_inputs,

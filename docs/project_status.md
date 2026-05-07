@@ -1,6 +1,6 @@
 # 项目状态
 
-更新日期：2026-05-06
+更新日期：2026-05-07
 
 ## 项目背景
 
@@ -18,6 +18,8 @@ OJ-like v1 的数据、tool、reward 和 verl validation 评测链路已经接�
 TODO
 1. 提升评测脚本的效率
 2. 当前使用基础模型应该也能产生tool_call,所以sft给模型带来的提升有待量化，比如acc和平均tool_call的轮次等，待优化完成评测脚本后执行。
+
+评测效率的第一轮对比实验计划见 [`docs/eval_efficiency_experiment_plan.md`](eval_efficiency_experiment_plan.md)。
 
 
 ## 当前评测链路效率分析
@@ -55,4 +57,3 @@ TODO
 - 模型已经能产生 tool call，旧的“tool-call rate = 0%”结论是因为评测脚本中没有显式的配置`actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent ` 导致错误的使用了 verl 默认的single_turn_agent，所以没有一个工具调用。
 - 评测效率远达不到目标：按最新 run 外推，500 条 CodeContests 约 10.7 小时，611 条 LiveCodeBench 约 13.1 小时。
 - 当前首要 blocker 是吞吐和单条 trajectory 过长，而不是 eval 链路能不能跑通。
-

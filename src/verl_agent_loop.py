@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 from verl.experimental.agent_loop.agent_loop import register
@@ -49,6 +50,12 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
                 "public_test_call_count": 0,
                 "submission_count": 0,
                 "max_tool_calls": self._max_tool_calls(agent_data),
+                "tool_wall_seconds": 0.0,
+                "max_tool_wall_seconds": 0.0,
+                "judge_runtime_seconds": 0.0,
+                "max_judge_runtime_seconds": 0.0,
+                "action_counts": {},
+                "verdict_counts": {},
             }
             agent_data.extra_fields[_TRACE_KEY] = trace
         return trace
@@ -132,12 +139,30 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         verdict = result.get("verdict") if isinstance(result, dict) else None
         if action:
             trace["last_action"] = action
+            action_counts = trace.setdefault("action_counts", {})
+            if isinstance(action_counts, dict):
+                action_counts[action] = int(action_counts.get(action, 0)) + 1
         if verdict:
             trace["last_verdict"] = verdict
+            verdict_counts = trace.setdefault("verdict_counts", {})
+            if isinstance(verdict_counts, dict):
+                verdict_counts[verdict] = int(verdict_counts.get(verdict, 0)) + 1
         if "public_test_call_count" in result:
             trace["public_test_call_count"] = int(result["public_test_call_count"])
         if "submission_count" in result:
             trace["submission_count"] = int(result["submission_count"])
+        judge_runtime = 0.0
+        for case in result.get("tests", []) if isinstance(result, dict) else []:
+            try:
+                judge_runtime += float(case.get("runtime_seconds", 0.0))
+            except Exception:
+                continue
+        if judge_runtime:
+            trace["judge_runtime_seconds"] = float(trace.get("judge_runtime_seconds", 0.0)) + judge_runtime
+            trace["max_judge_runtime_seconds"] = max(
+                float(trace.get("max_judge_runtime_seconds", 0.0)),
+                judge_runtime,
+            )
 
         if int(trace.get("num_tool_calls", 0)) >= int(trace.get("max_tool_calls", self._max_tool_calls(agent_data))):
             self._mark_terminal(agent_data, self._terminal_reason(agent_data) or "tool_call_limit_exhausted")
@@ -167,6 +192,14 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
     async def _call_tool(
         self, tool_call, tools_kwargs: dict[str, Any], agent_data: AgentData
     ) -> tuple[ToolResponse, float, dict]:
+        started_at = time.perf_counter()
         tool_response, tool_reward, result = await super()._call_tool(tool_call, tools_kwargs, agent_data)
+        elapsed = time.perf_counter() - started_at
+        trace = self._trace(agent_data)
+        trace["tool_wall_seconds"] = float(trace.get("tool_wall_seconds", 0.0)) + elapsed
+        trace["max_tool_wall_seconds"] = max(
+            float(trace.get("max_tool_wall_seconds", 0.0)),
+            elapsed,
+        )
         self._record_tool_result(agent_data, result if isinstance(result, dict) else {})
         return tool_response, tool_reward, result
