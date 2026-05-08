@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+import re
+
+
+_SUBMIT_OBSERVATION_RE = re.compile(
+    r"submit_solution:\s*([a-z_]+)\.\s*(\d+)/(\d+)\s+tests passed\.",
+    re.MULTILINE,
+)
+
+
+def _submit_reward(verdict: str, passed: int, total: int) -> float:
+    if verdict == "accepted":
+        return 1.0
+    if verdict in {"wrong_answer", "runtime_error", "time_limit_exceeded"}:
+        return 0.2 * (passed / total if total else 0.0)
+    return 0.0
+
 
 def compute_score(
     data_source: str,
@@ -12,36 +28,34 @@ def compute_score(
 ) -> dict:
     """Compute the OJ-like scalar reward and eval-friendly metrics.
 
-    `score` 继续沿用训练奖励口径：
-
-    - public tests: 0
-    - failed submit: <= 0.2
-    - accepted submit: 1.0
-
-    同时额外暴露 `acc`，让 verl validation 可以直接按二值正确率聚合，
-    而不是只看 shaped reward。
+    The stable correctness metric is based on the final ``submit_solution``
+    verdict, not the best historical tool reward.  The scalar ``score`` is the
+    current training reward and can be adjusted independently later.
     """
     if extra_info is None:
         extra_info = {}
 
     tool_rewards = extra_info.get("tool_rewards", [])
+    matches = list(_SUBMIT_OBSERVATION_RE.finditer(solution_str or ""))
 
-    if not tool_rewards:
+    if not matches:
         return {
             "score": 0.0,
-            "tool_reward": 0.0,
-            "num_tool_calls": 0,
+            "reward": 0.0,
+            "num_tool_calls": len(tool_rewards),
             "acc": 0.0,
         }
 
-    # Tools already encode the OJ reward policy:
-    # public tests = 0, failed submits <= 0.2, accepted submit = 1.0.
-    total = max(float(reward) for reward in tool_rewards)
-    accepted = 1.0 if total >= 1.0 else 0.0
+    last_submit = matches[-1]
+    verdict = last_submit.group(1)
+    passed = int(last_submit.group(2))
+    total = int(last_submit.group(3))
+    reward = _submit_reward(verdict, passed, total)
+    accepted = 1.0 if verdict == "accepted" else 0.0
 
     return {
-        "score": total,
-        "tool_reward": total,
+        "score": reward,
+        "reward": reward,
         "num_tool_calls": len(tool_rewards),
         "acc": accepted,
     }

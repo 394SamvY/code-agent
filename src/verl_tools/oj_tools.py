@@ -127,8 +127,8 @@ class _OJBaseTool(BaseTool):
         if accepted:
             session_state["accepted"] = True
 
-        if accepted or submissions_exhausted or verdict == VERDICT_SUBMISSION_LIMIT_EXCEEDED:
-            reason = "accepted" if accepted else "submission_limit_exhausted"
+        if (not accepted and submissions_exhausted) or verdict == VERDICT_SUBMISSION_LIMIT_EXCEEDED:
+            reason = "submission_limit_exhausted"
             result["terminal"] = True
             result["terminal_reason"] = reason
             if agent_data is not None:

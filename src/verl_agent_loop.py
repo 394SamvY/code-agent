@@ -49,6 +49,12 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
                 "last_verdict": None,
                 "public_test_call_count": 0,
                 "submission_count": 0,
+                "final_submit_verdict": "no_submission",
+                "final_submit_reward": 0.0,
+                "final_submit_passed": None,
+                "final_submit_total": None,
+                "submit_accepted_seen": False,
+                "has_tool_call_after_submit_accepted": False,
                 "max_tool_calls": self._max_tool_calls(agent_data),
                 "tool_wall_seconds": 0.0,
                 "max_tool_wall_seconds": 0.0,
@@ -117,26 +123,29 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             return
         self._mark_terminal(agent_data, "no_tool_call")
 
-    def _record_parse_failure_if_needed(self, agent_data: AgentData) -> None:
+    def _record_parse_failure_if_needed(self, agent_data: AgentData) -> bool:
         if agent_data.tool_calls:
-            return
+            return False
         if not agent_data.response_ids:
-            return
+            return False
         text = self.tokenizer.decode(agent_data.response_ids, skip_special_tokens=False)
         if "<tool_call>" not in text:
-            return
+            return False
         trace = self._trace(agent_data)
         trace["parse_failures"] = int(trace.get("parse_failures", 0)) + 1
         trace["tool_tail_chars"] = len(text[-512:])
         agent_data.extra_fields[_PARSE_FAILURES_KEY] = trace["parse_failures"]
         agent_data.extra_fields[_TOOL_TAIL_CHARS_KEY] = trace["tool_tail_chars"]
+        return True
 
-    def _record_tool_result(self, agent_data: AgentData, result: dict[str, Any]) -> None:
+    def _record_tool_result(self, agent_data: AgentData, result: dict[str, Any], tool_reward: float | None) -> None:
         trace = self._trace(agent_data)
         trace["num_tool_calls"] = int(trace.get("num_tool_calls", 0)) + 1
 
         action = result.get("action") if isinstance(result, dict) else None
         verdict = result.get("verdict") if isinstance(result, dict) else None
+        if action and trace.get("submit_accepted_seen"):
+            trace["has_tool_call_after_submit_accepted"] = True
         if action:
             trace["last_action"] = action
             action_counts = trace.setdefault("action_counts", {})
@@ -151,6 +160,17 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             trace["public_test_call_count"] = int(result["public_test_call_count"])
         if "submission_count" in result:
             trace["submission_count"] = int(result["submission_count"])
+        if action == "submit_solution":
+            trace["final_submit_verdict"] = str(verdict or "no_submission")
+            trace["final_submit_reward"] = float(tool_reward or 0.0)
+            trace["final_submit_passed"] = (
+                int(result["passed"]) if result.get("passed") is not None else None
+            )
+            trace["final_submit_total"] = (
+                int(result["total"]) if result.get("total") is not None else None
+            )
+            if verdict == "accepted":
+                trace["submit_accepted_seen"] = True
         judge_runtime = 0.0
         for case in result.get("tests", []) if isinstance(result, dict) else []:
             try:
@@ -174,9 +194,14 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         if state == AgentState.TERMINATED and agent_data.response_ids:
             tools = [tool.tool_schema for tool in self.tools.values()]
             _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
-        self._record_parse_failure_if_needed(agent_data)
+        parse_failed = self._record_parse_failure_if_needed(agent_data)
         if state == AgentState.TERMINATED and not agent_data.tool_calls:
-            self._record_no_tool_call_termination(agent_data)
+            if len(agent_data.response_mask) >= self.response_length:
+                self._mark_terminal(agent_data, "response_length_exceeded")
+            elif parse_failed:
+                self._mark_terminal(agent_data, "malformed_tool_call")
+            else:
+                self._record_no_tool_call_termination(agent_data)
         if self._should_terminate(agent_data):
             return AgentState.TERMINATED
         return state
@@ -185,6 +210,8 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         if self._should_terminate(agent_data):
             return AgentState.TERMINATED
         state = await super()._handle_processing_tools_state(agent_data)
+        if state == AgentState.TERMINATED and not self._terminal_reason(agent_data):
+            self._mark_terminal(agent_data, "response_length_exceeded")
         if self._should_terminate(agent_data):
             return AgentState.TERMINATED
         return state
@@ -201,5 +228,5 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             float(trace.get("max_tool_wall_seconds", 0.0)),
             elapsed,
         )
-        self._record_tool_result(agent_data, result if isinstance(result, dict) else {})
+        self._record_tool_result(agent_data, result if isinstance(result, dict) else {}, tool_reward)
         return tool_response, tool_reward, result

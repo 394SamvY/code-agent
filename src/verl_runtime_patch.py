@@ -74,26 +74,107 @@ def _messages_for_record(output: str, raw_prompt: Any, reward_extra_infos: dict[
     return to_messages(output, initial_messages=raw_prompt)
 
 
-def _trace_fields_for_record(reward_extra_infos: dict[str, list[Any]], index: int) -> dict[str, Any]:
+def _trace_for_record(reward_extra_infos: dict[str, list[Any]], index: int) -> dict[str, Any]:
     trace = _value_at(reward_extra_infos.get("code_agent_trace"), index, {})
     if not isinstance(trace, dict):
         trace = {}
+    return trace
+
+
+def _task_id_from_ground_truth(ground_truth: Any) -> str:
+    if isinstance(ground_truth, dict):
+        task_id = ground_truth.get("task_id")
+        if task_id:
+            return str(task_id)
+    return str(ground_truth or "")
+
+
+def _data_source_from_task_id(task_id: str) -> str:
+    return task_id.split("/", 1)[0] if "/" in task_id else "unknown"
+
+
+def _stop_reason_for_record(
+    trace: dict[str, Any],
+    reward_extra_infos: dict[str, list[Any]],
+    index: int,
+) -> str:
+    reason = trace.get("terminal_reason") or _value_at(
+        reward_extra_infos.get("code_agent_terminal_reason"),
+        index,
+    )
+    # Older traces used accepted as a terminal reason.  In the normalized
+    # schema accepted is a judge verdict; the episode ends naturally after the
+    # model stops calling tools.
+    if reason == "accepted":
+        return "no_tool_call"
+    return str(reason or "response_length_exceeded")
+
+
+def _generation_record(
+    *,
+    trainer: Any,
+    input_text: str,
+    output_text: str,
+    messages: list[dict[str, Any]],
+    ground_truth: Any,
+    score: float,
+    reward_extra_infos: dict[str, list[Any]],
+    index: int,
+    assistant_token_count: int,
+    output_token_count: int,
+    response_length: int,
+    rollout_index: int,
+) -> dict[str, Any]:
+    trace = _trace_for_record(reward_extra_infos, index)
+    task_id = _task_id_from_ground_truth(ground_truth)
+    final_submit_verdict = str(trace.get("final_submit_verdict") or "no_submission")
+    final_submit_passed = trace.get("final_submit_passed")
+    final_submit_total = trace.get("final_submit_total")
     return {
-        "code_agent_trace": trace,
-        "terminal_reason": (
-            trace.get("terminal_reason")
-            or _value_at(reward_extra_infos.get("code_agent_terminal_reason"), index)
-        ),
-        "parse_failures": (
-            trace.get("parse_failures")
-            if trace
-            else _value_at(reward_extra_infos.get("code_agent_parse_failures"), index, 0)
-        ),
-        "tool_tail_chars": (
-            trace.get("tail_text_chars")
-            if trace
-            else _value_at(reward_extra_infos.get("code_agent_tool_tail_chars"), index, 0)
-        ),
+        "sample": {
+            "task_id": task_id,
+            "data_source": _data_source_from_task_id(task_id),
+        },
+        "trajectory": {
+            "input": input_text,
+            "output": output_text,
+            "messages": messages,
+        },
+        "episode": {
+            "stop_reason": _stop_reason_for_record(trace, reward_extra_infos, index),
+            "assistant_token_count": int(assistant_token_count),
+            "output_token_count": int(output_token_count),
+            "response_length": int(response_length),
+            "parse_failures": int(
+                trace.get(
+                    "parse_failures",
+                    _value_at(reward_extra_infos.get("code_agent_parse_failures"), index, 0),
+                )
+                or 0
+            ),
+        },
+        "judge": {
+            "final_submit_verdict": final_submit_verdict,
+            "final_submit_reward": float(trace.get("final_submit_reward") or 0.0),
+            "final_submit_passed": int(final_submit_passed) if final_submit_passed is not None else None,
+            "final_submit_total": int(final_submit_total) if final_submit_total is not None else None,
+        },
+        "behavior": {
+            "num_tool_calls": int(trace.get("num_tool_calls", 0) or 0),
+            "public_test_call_count": int(trace.get("public_test_call_count", 0) or 0),
+            "submission_count": int(trace.get("submission_count", 0) or 0),
+            "has_tool_call_after_submit_accepted": bool(
+                trace.get("has_tool_call_after_submit_accepted", False)
+            ),
+        },
+        "metrics": {
+            "acc": 1.0 if final_submit_verdict == "accepted" else 0.0,
+            "reward": float(score),
+        },
+        "verl": {
+            "step": int(trainer.global_steps),
+            "rollout_index": int(rollout_index),
+        },
     }
 
 
@@ -168,9 +249,9 @@ def _summarize_validation_records(
         reason = trace.get("terminal_reason") or _value_at(
             reward_extra_infos.get("code_agent_terminal_reason"),
             i,
-            "unknown",
+            "response_length_exceeded",
         )
-        terminal_reasons[str(reason or "unknown")] += 1
+        terminal_reasons[str(reason or "response_length_exceeded")] += 1
         tool_calls.append(int(trace.get("num_tool_calls", 0) or 0))
         tool_wall_seconds.append(float(trace.get("tool_wall_seconds", 0.0) or 0.0))
         judge_runtime_seconds.append(float(trace.get("judge_runtime_seconds", 0.0) or 0.0))
@@ -289,7 +370,11 @@ def _append_partial_generations(
     raw_prompts: list[Any],
     gts: list[Any],
     scores: list[float],
+    assistant_token_counts: list[int],
+    output_token_counts: list[int],
     reward_extra_infos: dict[str, list[Any]],
+    response_length: int,
+    rollout_indices: list[int],
     dump_path: str | None,
     batch_index: int,
 ) -> None:
@@ -311,32 +396,32 @@ def _append_partial_generations(
     os.makedirs(dump_path, exist_ok=True)
     filename = os.path.join(dump_path, f"partial_{trainer.global_steps}.jsonl")
     n = len(inputs)
-    base_data = {
-        "input": inputs,
-        "output": outputs,
-        "messages": [
-            _messages_for_record(
-                output,
-                raw_prompts[i] if i < len(raw_prompts) else None,
-                reward_extra_infos,
-                i,
-            )
-            for i, output in enumerate(outputs)
-        ],
-        "gts": gts,
-        "score": scores,
-        "step": [trainer.global_steps] * n,
-        "batch_index": [batch_index] * n,
-    }
-
-    for key, values in reward_extra_infos.items():
-        if len(values) == n:
-            base_data[key] = values
+    messages = [
+        _messages_for_record(
+            output,
+            raw_prompts[i] if i < len(raw_prompts) else None,
+            reward_extra_infos,
+            i,
+        )
+        for i, output in enumerate(outputs)
+    ]
 
     with open(filename, "a", encoding="utf-8") as f:
         for i in range(n):
-            entry = {key: values[i] for key, values in base_data.items()}
-            entry.update(_trace_fields_for_record(reward_extra_infos, i))
+            entry = _generation_record(
+                trainer=trainer,
+                input_text=inputs[i],
+                output_text=outputs[i],
+                messages=messages[i],
+                ground_truth=gts[i] if i < len(gts) else None,
+                score=float(scores[i]),
+                reward_extra_infos=reward_extra_infos,
+                index=i,
+                assistant_token_count=assistant_token_counts[i],
+                output_token_count=output_token_counts[i],
+                response_length=response_length,
+                rollout_index=rollout_indices[i] if i < len(rollout_indices) else 0,
+            )
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())
@@ -350,38 +435,43 @@ def _dump_generations_with_structure(
     raw_prompts: list[Any],
     gts: list[Any],
     scores: list[float],
+    assistant_token_counts: list[int],
+    output_token_counts: list[int],
     reward_extra_infos_dict: dict[str, list[Any]],
+    response_length: int,
+    rollout_indices: list[int],
     dump_path: str,
 ) -> None:
     """Write final validation generations with parsed tool-event structure."""
     os.makedirs(dump_path, exist_ok=True)
     filename = os.path.join(dump_path, f"{trainer.global_steps}.jsonl")
     n = len(inputs)
-    base_data = {
-        "input": inputs,
-        "output": outputs,
-        "messages": [
-            _messages_for_record(
-                output,
-                raw_prompts[i] if i < len(raw_prompts) else None,
-                reward_extra_infos_dict,
-                i,
-            )
-            for i, output in enumerate(outputs)
-        ],
-        "gts": gts,
-        "score": scores,
-        "step": [trainer.global_steps] * n,
-    }
-
-    for key, values in reward_extra_infos_dict.items():
-        if len(values) == n:
-            base_data[key] = values
+    messages = [
+        _messages_for_record(
+            output,
+            raw_prompts[i] if i < len(raw_prompts) else None,
+            reward_extra_infos_dict,
+            i,
+        )
+        for i, output in enumerate(outputs)
+    ]
 
     with open(filename, "w", encoding="utf-8") as f:
         for i in range(n):
-            entry = {key: values[i] for key, values in base_data.items()}
-            entry.update(_trace_fields_for_record(reward_extra_infos_dict, i))
+            entry = _generation_record(
+                trainer=trainer,
+                input_text=inputs[i],
+                output_text=outputs[i],
+                messages=messages[i],
+                ground_truth=gts[i] if i < len(gts) else None,
+                score=float(scores[i]),
+                reward_extra_infos=reward_extra_infos_dict,
+                index=i,
+                assistant_token_count=assistant_token_counts[i],
+                output_token_count=output_token_counts[i],
+                response_length=response_length,
+                rollout_index=rollout_indices[i] if i < len(rollout_indices) else 0,
+            )
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     print(f"Dumped generations with messages to {filename}")
@@ -442,9 +532,12 @@ def _install_validation_partial_dump_patch() -> None:
         sample_uids = []
         sample_messages = []
         sample_output_token_counts = []
+        sample_assistant_token_counts = []
+        sample_rollout_indices = []
         validation_started_at = time.perf_counter()
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
         response_length = int(self.config.actor_rollout_ref.rollout.response_length)
+        val_repeat_n = int(self.config.actor_rollout_ref.rollout.val_kwargs.n)
         print(
             "[code-agent][eval] "
             f"validation_start ts={_now_for_log()} "
@@ -467,7 +560,7 @@ def _install_validation_partial_dump_patch() -> None:
                 )
 
             test_batch = test_batch.repeat(
-                repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n,
+                repeat_times=val_repeat_n,
                 interleave=True,
             )
 
@@ -525,15 +618,24 @@ def _install_validation_partial_dump_patch() -> None:
 
             # ── 增量 dump：解析 batch 结果，立即追加到 partial_0.jsonl ──
             output_ids = test_output_gen_batch.batch["responses"]
+            response_masks = test_output_gen_batch.batch.get("response_mask", None)
             pad_token_id = self.tokenizer.pad_token_id
             output_token_counts = [
                 int((ids != pad_token_id).sum().item()) for ids in output_ids
             ]
+            assistant_token_counts = (
+                [int(mask.sum().item()) for mask in response_masks]
+                if response_masks is not None
+                else output_token_counts
+            )
             sample_output_token_counts.extend(output_token_counts)
+            sample_assistant_token_counts.extend(assistant_token_counts)
             output_texts = [
                 self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids
             ]
             sample_outputs.extend(output_texts)
+            rollout_indices = [i % val_repeat_n for i in range(len(output_texts))]
+            sample_rollout_indices.extend(rollout_indices)
 
             test_batch = test_batch.union(test_output_gen_batch)
             test_batch.meta_info["validate"] = True
@@ -610,7 +712,11 @@ def _install_validation_partial_dump_patch() -> None:
                 raw_prompts=raw_prompts,
                 gts=ground_truths,
                 scores=scores,
+                assistant_token_counts=assistant_token_counts,
+                output_token_counts=output_token_counts,
                 reward_extra_infos=batch_reward_extra_infos,
+                response_length=response_length,
+                rollout_indices=rollout_indices,
                 dump_path=val_data_dir,
                 batch_index=batch_index,
             )
@@ -655,7 +761,11 @@ def _install_validation_partial_dump_patch() -> None:
                 raw_prompts=sample_raw_prompts,
                 gts=sample_gts,
                 scores=sample_scores,
+                assistant_token_counts=sample_assistant_token_counts,
+                output_token_counts=sample_output_token_counts,
                 reward_extra_infos_dict=reward_extra_infos_dict,
+                response_length=response_length,
+                rollout_indices=sample_rollout_indices,
                 dump_path=val_data_dir,
             )
 
