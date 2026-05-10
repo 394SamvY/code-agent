@@ -1,6 +1,6 @@
 # 评测效率实验计划
 
-更新日期：2026-05-08
+更新日期：2026-05-09
 
 ## 目标
 
@@ -9,10 +9,31 @@
 - `data/verl/codecontests_test.parquet`：500 题，2 小时内完成。
 - `data/verl/livecodebench_test.parquet`：611 题，2 小时内完成。
 
+当前结论：目标已达成。最终默认参数已写入 `scripts/evaluate_baseline_with_verl.sh`，两次正式 full eval 分别为 CodeContests 499 条 45m02s、LiveCodeBench 611 条 55m33s。CodeContests 少 1 条是因为 `MAX_PROMPT_LENGTH=4096` 下 `FILTER_OVERLONG_PROMPTS=true` 过滤了一条 overlong prompt。
+
 第一阶段实验不直接追求一次调到目标，而是先回答两个问题：
 
 1. 当前 16 样本 smoke 是否没有让评测链路满载。
 2. 评测慢主要来自 SGLang 吞吐不足，还是单题 assistant 生成 token 过多。
+
+## 最终默认参数
+
+当前 baseline / full eval 默认使用：
+
+```text
+MAX_RESPONSE_LENGTH=8192
+MAX_MODEL_LEN=12288
+VAL_BATCH_SIZE=64
+AGENT_WORKERS=64
+MAX_NUM_SEQS=64
+GPU_MEMORY_UTILIZATION=0.88
+VAL_TEMPERATURE=0
+VAL_DO_SAMPLE=false
+ENABLE_THINKING=true
+ROLLOUT_TP=1
+```
+
+这些默认值已经同步到 `scripts/evaluate_baseline_with_verl.sh`。后续如需探索更激进并发或更高 `GPU_MEMORY_UTILIZATION`，应通过命令行显式覆盖，而不是改默认值。
 
 ## 统计口径
 
@@ -74,6 +95,8 @@ MAX_NUM_SEQS=48
 AGENT_WORKERS=32
 ENABLE_THINKING=true
 ```
+
+这组是第一轮效率实验的历史基线。当前 full eval 默认已改为 `MAX_RESPONSE_LENGTH=8192`、`VAL_BATCH_SIZE=64`、`AGENT_WORKERS=64`、`MAX_NUM_SEQS=64`；详见上面的“最终默认参数”。
 
 `ROLLOUT_TP=1` 表示 2 卡上有 2 个独立 SGLang rollout replica。对 8B 模型和 2xA800，这通常比 `ROLLOUT_TP=2` 更适合吞吐评测。
 
@@ -190,7 +213,7 @@ terminal / tool 分布：
 - 16 样本 smoke 明显低估吞吐。之前 16 样本约 `260-317 assistant tok/s`，A3 到 `549.5 assistant tok/s`，说明 128 样本能更充分打满 SGLang/agent 链路。
 - 当前主要瓶颈仍是单题 assistant 输出过长，不是 tool observation 或 judge。`tool_wall_time=517.8s` 只占 ready-to-end 的约 10.9%，主耗时是 SGLang decode。
 - 最大 token 来源是 `no_tool_call` 长输出，尤其 `num_tool_calls=0` 的 54 条，平均接近打满 `MAX_RESPONSE_LENGTH=28672`。这说明模型经常长时间思考但没有进入工具调用。
-- `tool_call_limit_exhausted` 不是最大 token 来源，但暴露出 accepted 后继续调用工具的行为问题。当前 reward 口径是 `max(tool_rewards)`，所以轨迹中间 submit accepted 后，即使最终以 `no_tool_call` 或 `tool_call_limit_exhausted` 结束，`acc` 仍然为 1。
+- `tool_call_limit_exhausted` 不是最大 token 来源，但暴露出 accepted 后继续调用工具的行为问题。当前 reward / `acc` 口径按 `src/reward.py` 里的最后一次 `submit_solution` observation 计算，不是 `max(tool_rewards)`；因此 accepted 后如果没有新的 submit，`acc` 仍为 1，如果后续又 submit 失败，则以最后一次失败 submit 为准。
 - 这符合后续 RL 可优化方向：奖励 `submit accepted -> 简短收尾 -> no_tool_call`，惩罚 accepted 后继续工具调用、无工具长思考、撞工具上限等行为。
 
 按 A3 结果外推：
@@ -578,6 +601,132 @@ VAL_DO_SAMPLE=false
 
 这组参数已经写入 `scripts/evaluate_baseline_with_verl.sh` 默认值。脚本不新增 `threads1` 类限制；如果后续再次探索更激进并发或 `mem0.95`，再由命令行显式传入线程限制做单独实验。
 
+## 正式 full eval 结果
+
+两次正式评测都使用当前默认参数：
+
+```text
+MAX_RESPONSE_LENGTH=8192
+VAL_BATCH_SIZE=64
+AGENT_WORKERS=64
+MAX_NUM_SEQS=64
+GPU_MEMORY_UTILIZATION=0.88
+VAL_TEMPERATURE=0
+VAL_DO_SAMPLE=false
+ENABLE_THINKING=true
+```
+
+模型 checkpoint：
+
+```text
+/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface
+```
+
+### CodeContests full eval
+
+run：`outputs/verl_baseline_eval/full_codecontests_test_mr8192_vb64_w64_s64_mem088_greedy`
+
+时间：
+
+| 指标 | 数值 |
+| --- | ---: |
+| start | 2026-05-08 04:01:40 |
+| validation_start | 2026-05-08 04:03:03 |
+| end | 2026-05-08 04:46:42 |
+| wall time | 45m02s |
+| validation elapsed | 2605.7s / 43m25.7s |
+
+结果：
+
+| 指标 | 数值 |
+| --- | ---: |
+| samples | 499 |
+| score mean | 0.2213 |
+| acc | 22.04% |
+| assistant tokens | 3,386,657 |
+| assistant tokens/problem | 6,786.9 |
+| assistant token p50 | 8,093 |
+| assistant token p90 | 8,192 |
+| assistant tok/s | 1,299.7 |
+| response cap hit | 386/499 |
+| assistant cap hit | 214/499 |
+| tool response tokens/problem | 178.4 |
+| tool calls/problem | 3.03 |
+| max tool calls | 22 |
+| tool wall time | 1,647.0s |
+| judge runtime | 1,611.3s |
+| num turns mean | 7.96 |
+
+terminal 分布：
+
+| terminal_reason | 数量 |
+| --- | ---: |
+| `no_tool_call` | 394 |
+| `tool_call_limit_exhausted` | 10 |
+| `unknown` | 95 |
+
+说明：
+
+- `codecontests_test` 原始 500 条，validation 实际 499 条；日志显示 train stub 过滤后 500 条、validation file 过滤后 499 条。
+- `generations/0.jsonl` 和 `generations/partial_0.jsonl` 都是 499 行，已完整落盘。
+- 本次 full eval 已满足 2 小时目标，且比 B2/C2 的 128 条外推更可信。
+
+### LiveCodeBench full eval
+
+run：`outputs/verl_baseline_eval/full_livecodebench_test_mr8192_vb64_w64_s64_mem088_greedy`
+
+时间：
+
+| 指标 | 数值 |
+| --- | ---: |
+| start | 2026-05-08 22:20:10 |
+| validation_start | 2026-05-08 22:22:40 |
+| end | 2026-05-08 23:15:43 |
+| wall time | 55m33s |
+| validation elapsed | 3168.5s / 52m48.5s |
+
+结果：
+
+| 指标 | 数值 |
+| --- | ---: |
+| samples | 611 |
+| score mean | 0.3550 |
+| acc | 35.19% |
+| assistant tokens | 3,879,277 |
+| assistant tokens/problem | 6,349.1 |
+| assistant token p50 | 8,075 |
+| assistant token p90 | 8,192 |
+| assistant tok/s | 1,224.3 |
+| response cap hit | 443/611 |
+| assistant cap hit | 221/611 |
+| tool response tokens/problem | 146.6 |
+| tool calls/problem | 3.08 |
+| max tool calls | 22 |
+| tool wall time | 1,354.5s |
+| judge runtime | 1,343.0s |
+| num turns mean | 8.08 |
+
+terminal 分布：
+
+| terminal_reason | 数量 |
+| --- | ---: |
+| `no_tool_call` | 509 |
+| `tool_call_limit_exhausted` | 14 |
+| `unknown` | 88 |
+
+说明：
+
+- `generations/0.jsonl` 和 `generations/partial_0.jsonl` 都是 611 行，已完整落盘。
+- 本次 full eval 已满足 2 小时目标；当前评测效率 blocker 可以关闭。
+
+### full eval 结论
+
+- 正式评测耗时已经远低于目标：CodeContests 45m02s，LiveCodeBench 55m33s。
+- full eval 吞吐约 `1224-1300 assistant tok/s`，与 C2 固定 128 条的 `1304.7 assistant tok/s` 同量级，说明 C2 参数在完整集上稳定。
+- 两个 full run 的 assistant tokens/problem 都在 `6.3k-6.8k`，符合 B2 对 `8192` budget 的预期。
+- `response_cap_hit` 仍很高，说明效率达标主要来自硬截断和并发优化；模型行为仍需要通过 RL 奖励和 stop 约束改善。
+- 后续大规模 baseline、RL validation 和 rollout 默认复用脚本内参数；只有做质量敏感复核或并发消融时再显式覆盖。
+
 
 ## 估算公式
 
@@ -602,4 +751,4 @@ assistant_tokens_per_problem <= assistant_tokens_per_second * 7200 / 500
 | 800 | 11,520 |
 | 1000 | 14,400 |
 
-当前 smoke 平均约 `21,583 assistant tokens/problem`。如果吞吐维持在 300 tok/s 左右，必须把单题 token 降到当前约 20%。如果并发优化后吞吐能到 600-800 tok/s，则 `8192` 附近可能成为可接受的折中点。
+历史 smoke 平均约 `21,583 assistant tokens/problem`。正式 full eval 已经通过 `8192` response budget 和 C2 并发参数把 assistant tokens/problem 降到 `6.3k-6.8k`，并把吞吐提升到 `1224-1300 assistant tok/s`，因此完整评测 2 小时目标已经达成。
