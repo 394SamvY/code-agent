@@ -28,3 +28,6 @@ data/verl/codecontests_train.parquet.zip
 outputs/verl_sft/**
 !outputs/verl_sft/**/
 !outputs/verl_sft/**/train.log
+
+# Ignore checkpoints under outputs
+outputs/**/checkpoints/

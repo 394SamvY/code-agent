@@ -34,6 +34,7 @@ from src.trajectory_parser import to_messages
 _PATCHED = False
 _CODE_AGENT_DUMP_ONLY_KEYS = (
     "code_agent_trace",
+    "code_agent_tool_events",
     "code_agent_terminal_reason",
     "code_agent_parse_failures",
     "code_agent_tool_tail_chars",
@@ -68,6 +69,22 @@ def _dataproto_len(data: Any) -> int:
             except Exception:
                 continue
     return 0
+
+
+def _values_to_list(values: Any) -> list[Any]:
+    if isinstance(values, np.ndarray):
+        return values.tolist()
+    if isinstance(values, list):
+        return values
+    return [values]
+
+
+def _float_at(values: Any, index: int, default: float = 0.0) -> float:
+    value = _value_at(values, index, default)
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
 
 
 def _messages_for_record(output: str, raw_prompt: Any, reward_extra_infos: dict[str, list[Any]], index: int) -> list:
@@ -130,6 +147,7 @@ def _generation_record(
     final_submit_verdict = str(trace.get("final_submit_verdict") or "no_submission")
     final_submit_passed = trace.get("final_submit_passed")
     final_submit_total = trace.get("final_submit_total")
+    acc = _float_at(reward_extra_infos.get("acc"), index, 1.0 if final_submit_verdict == "accepted" else 0.0)
     return {
         "sample": {
             "task_id": task_id,
@@ -139,6 +157,7 @@ def _generation_record(
             "input": input_text,
             "output": output_text,
             "messages": messages,
+            "tool_events": _value_at(reward_extra_infos.get("code_agent_tool_events"), index, []),
         },
         "episode": {
             "stop_reason": _stop_reason_for_record(trace, reward_extra_infos, index),
@@ -166,10 +185,35 @@ def _generation_record(
             "has_tool_call_after_submit_accepted": bool(
                 trace.get("has_tool_call_after_submit_accepted", False)
             ),
+            "assistant_chars_after_submit_accepted": int(
+                trace.get("assistant_chars_after_submit_accepted", 0) or 0
+            ),
+            "assistant_tokens_after_submit_accepted": int(
+                trace.get("assistant_tokens_after_submit_accepted", 0) or 0
+            ),
         },
         "metrics": {
-            "acc": 1.0 if final_submit_verdict == "accepted" else 0.0,
+            "acc": acc,
+            "acc_final": _float_at(reward_extra_infos.get("acc_final"), index, acc),
+            "acc_any": _float_at(reward_extra_infos.get("acc_any"), index, 0.0),
+            "best_submit_pass_rate": _float_at(
+                reward_extra_infos.get("best_submit_pass_rate"),
+                index,
+                0.0,
+            ),
+            "last_submit_pass_rate": _float_at(
+                reward_extra_infos.get("last_submit_pass_rate"),
+                index,
+                0.0,
+            ),
             "reward": float(score),
+            "outcome_reward": _float_at(reward_extra_infos.get("outcome_reward"), index, 0.0),
+            "outcome_submit_policy": str(
+                _value_at(reward_extra_infos.get("outcome_submit_policy"), index, "last_submit")
+            ),
+            "debug_prm": _float_at(reward_extra_infos.get("debug_prm"), index, 0.0),
+            "bad_pattern": _float_at(reward_extra_infos.get("bad_pattern"), index, 0.0),
+            "reward_breakdown": _value_at(reward_extra_infos.get("reward_breakdown"), index, ""),
         },
         "verl": {
             "step": int(trainer.global_steps),
@@ -475,6 +519,86 @@ def _dump_generations_with_structure(
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     print(f"Dumped generations with messages to {filename}")
+
+
+def _combined_reward_extra_infos(batch: Any, reward_extra_infos_dict: dict[str, list[Any]]) -> dict[str, list[Any]]:
+    combined: dict[str, list[Any]] = {
+        key: _values_to_list(values)
+        for key, values in reward_extra_infos_dict.items()
+    }
+    non_tensor_batch = getattr(batch, "non_tensor_batch", {})
+    if not isinstance(non_tensor_batch, dict):
+        return combined
+    for key in _CODE_AGENT_DUMP_ONLY_KEYS:
+        if key in non_tensor_batch:
+            combined[key] = _values_to_list(non_tensor_batch[key])
+    return combined
+
+
+def _install_training_rollout_dump_patch() -> None:
+    """Patch training rollout JSONL dump to use the structured trajectory schema.
+
+    verl's native ``_log_rollout_data`` only writes prompt/response/score plus
+    reward extra info.  It does not include agent-loop trace/tool events or
+    exact response token counts, which are required for the GRPO rollout
+    metrics in ``docs/grpo_rollout_metrics.md``.
+    """
+
+    from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+    from verl.utils.debug import marked_timer
+
+    if getattr(RayPPOTrainer, "_code_agent_structured_rollout_dump", False):
+        return
+
+    def log_rollout_data_with_structure(
+        self,
+        batch,
+        reward_extra_infos_dict: dict,
+        timing_raw: dict,
+        rollout_data_dir: str,
+    ):
+        with marked_timer("dump_rollout_generations", timing_raw, color="green"):
+            response_length = int(self.config.actor_rollout_ref.rollout.response_length)
+            rollout_n = int(self.config.actor_rollout_ref.rollout.n)
+            output_ids = batch.batch["responses"]
+            response_masks = batch.batch.get("response_mask", None)
+            pad_token_id = self.tokenizer.pad_token_id
+            output_token_counts = [
+                int((ids != pad_token_id).sum().item()) for ids in output_ids
+            ]
+            assistant_token_counts = (
+                [int(mask.sum().item()) for mask in response_masks]
+                if response_masks is not None
+                else output_token_counts
+            )
+            inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
+            outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+            scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
+            sample_gts = [
+                item.non_tensor_batch.get("reward_model", {}).get("ground_truth", None)
+                for item in batch
+            ]
+            raw_prompts = _values_to_list(batch.non_tensor_batch.get("raw_prompt", []))
+            rollout_indices = [i % rollout_n for i in range(len(outputs))]
+            reward_extra_infos = _combined_reward_extra_infos(batch, reward_extra_infos_dict)
+
+            _dump_generations_with_structure(
+                self,
+                inputs=inputs,
+                outputs=outputs,
+                raw_prompts=raw_prompts,
+                gts=sample_gts,
+                scores=scores,
+                assistant_token_counts=assistant_token_counts,
+                output_token_counts=output_token_counts,
+                reward_extra_infos_dict=reward_extra_infos,
+                response_length=response_length,
+                rollout_indices=rollout_indices,
+                dump_path=rollout_data_dir,
+            )
+
+    RayPPOTrainer._log_rollout_data = log_rollout_data_with_structure
+    RayPPOTrainer._code_agent_structured_rollout_dump = True
 
 
 def _install_validation_partial_dump_patch() -> None:
@@ -814,7 +938,8 @@ def apply_patches() -> None:
 
     补丁列表：
       1. _install_numpy_json_patch:           json.dumps 兼容 numpy 类型
-      2. _install_validation_partial_dump_patch: validation 增量 dump
+      2. _install_training_rollout_dump_patch: training rollout 结构化 dump
+      3. _install_validation_partial_dump_patch: validation 增量 dump
 
     幂等：重复调用不会重复安装（各 patch 内部有哨兵检查）。
     """
@@ -823,6 +948,7 @@ def apply_patches() -> None:
         return
 
     _install_numpy_json_patch()
+    _install_training_rollout_dump_patch()
     _install_validation_partial_dump_patch()
     _PATCHED = True
     print("[code-agent] verl runtime patches enabled")

@@ -63,10 +63,6 @@ actor_rollout_ref:
     kl_loss_type: low_var_kl
     # 小 entropy bonus，用于保留早期探索。
     entropy_coeff: 0.001
-    # 满长 response 下 entropy 的 logits/softmax 临时张量很大；
-    # 分块计算并在 backward 重算，优先降低 actor update 峰值显存。
-    entropy_checkpointing: true
-    entropy_from_logits_with_chunking: true
     clip_ratio: 0.2
     grad_clip: 1.0
     use_torch_compile: false
@@ -89,15 +85,12 @@ actor_rollout_ref:
     log_prob_micro_batch_size_per_gpu: 1
     use_torch_compile: false
     fsdp_config:
-      # reference model 只在 rollout 后计算 KL/logprob，空闲期间可 offload 到 CPU。
-      param_offload: true
       model_dtype: bf16
 
   rollout:
     name: sglang
-    # SGLang KV-cache 显存比例。训练 rollout 采样阶段相对独立，
-    # 复用 baseline eval 已验证的高吞吐参数；ref 已开启 param offload。
-    gpu_memory_utilization: 0.88
+    # SGLang KV-cache 显存比例；0.82 给 FSDP/ref worker 留出余量。
+    gpu_memory_utilization: 0.82
     tensor_model_parallel_size: 1
     # 训练 rollout 使用采样；validation 使用下面的 val_kwargs。
     temperature: 0.9
@@ -108,7 +101,7 @@ actor_rollout_ref:
     max_model_len: 12288
     # SGLang 吞吐和资源保护参数。
     max_num_batched_tokens: 32768
-    max_num_seqs: 64
+    max_num_seqs: 32
     enforce_eager: true
     log_prob_micro_batch_size_per_gpu: 1
     # GRPO group size：每道题采样 4 条回答，并在同一个 prompt uid 组内
@@ -123,8 +116,7 @@ actor_rollout_ref:
       do_sample: false
     agent:
       # 多轮工具 rollout 的异步 agent loop worker 数。
-      # eval C2/full eval 中 64 workers 相比 32 workers 有明显吞吐收益。
-      num_workers: 64
+      num_workers: 32
       default_agent_loop: code_agent_tool_agent
       agent_loop_config_path: configs/verl/code_agent_loop.yaml
     multi_turn:
@@ -148,7 +140,7 @@ trainer:
   n_gpus_per_node: 2
   # 外层 training step 数。每步包含 rollout、reward、advantage、actor update
   # 和 rollout 权重同步。
-  total_training_steps: 1
+  total_training_steps: 10
   # 避免首次更新前先跑一次较慢的 validation。
   val_before_train: false
   # 当前只保存 hf_model，不保存 optimizer/extra/FSDP shard，因此禁用自动 resume，

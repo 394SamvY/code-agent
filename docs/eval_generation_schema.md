@@ -1,6 +1,6 @@
 # 评测/训练采样轨迹 JSONL Schema 草案
 
-更新日期：2026-05-09
+更新日期：2026-05-13
 
 ## 目标
 
@@ -10,7 +10,9 @@
 
 - `episode.stop_reason` 只描述 episode 为什么停止。
 - `judge.final_submit_verdict` 只描述最后一次 `submit_solution` 的 verdict。
-- `metrics.acc = 1.0 if judge.final_submit_verdict == "accepted" else 0.0`。
+- `metrics.acc` / `metrics.acc_final` 按最后一次 `submit_solution` 计算。
+- `metrics.acc_any` 记录 trajectory 中是否曾经有任意 submit accepted，用来区分“不会解题”和“会解题但不会停止”。
+- reward 只消费 agent loop 记录的真实 `trajectory.tool_events` / `extra_info["code_agent_tool_events"]`，不解析 `trajectory.output`。
 - `behavior.has_tool_call_after_submit_accepted` 记录模型在正式提交 AC 后是否又继续调用工具，可用于后续 reward 惩罚。
 
 ## JSONL 每行示例
@@ -75,6 +77,38 @@
         "role": "assistant",
         "content": "The solution passed all tests."
       }
+    ],
+    "tool_events": [
+      {
+        "index": 0,
+        "tool": "run_public_tests",
+        "verdict": "accepted",
+        "passed": 1,
+        "total": 1,
+        "pass_rate": 1.0,
+        "code": "t=int(input())\nfor _ in range(t):\n    s=input().strip()\n    print('YES' if s in {'abc','acb','bac','cba'} else 'NO')\n",
+        "code_hash": "...",
+        "semantic_hash": "...",
+        "observation": "run_public_tests: accepted. 1/1 tests passed.\nAll tests passed.",
+        "first_failed": null,
+        "tool_reward": 0.0,
+        "error_kind": "accepted"
+      },
+      {
+        "index": 1,
+        "tool": "submit_solution",
+        "verdict": "accepted",
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "code": "t=int(input())\nfor _ in range(t):\n    s=input().strip()\n    print('YES' if s in {'abc','acb','bac','cba'} else 'NO')\n",
+        "code_hash": "...",
+        "semantic_hash": "...",
+        "observation": "submit_solution: accepted. 4/4 tests passed.\nAll tests passed.",
+        "first_failed": null,
+        "tool_reward": 1.0,
+        "error_kind": "accepted"
+      }
     ]
   },
   "episode": {
@@ -98,7 +132,15 @@
   },
   "metrics": {
     "acc": 1.0,
-    "reward": 1.0
+    "acc_final": 1.0,
+    "acc_any": 1.0,
+    "best_submit_pass_rate": 1.0,
+    "last_submit_pass_rate": 1.0,
+    "reward": 1.0,
+    "outcome_reward": 1.0,
+    "debug_prm": 0.0,
+    "bad_pattern": 0.0,
+    "reward_breakdown": "{\"reward_formula\":\"outcome + debug_prm + bad_pattern\",...}"
   },
   "verl": {
     "step": 0,
@@ -123,6 +165,23 @@
 | `input` | decode 后的原始 prompt 字符串。 |
 | `output` | decode 后的完整 verl response 字符串，包含 assistant 生成内容、tool call 和 tool observation。 |
 | `messages` | 结构化 chat messages，用于复盘轨迹。 |
+| `tool_events` | agent loop 记录的真实工具执行事件。当前 reward 的权威输入来自同一份事件流，而不是 `output` 文本解析。 |
+
+### `trajectory.tool_events`
+
+| 字段 | 说明 |
+| --- | --- |
+| `index` | 工具事件序号。 |
+| `tool` | `run_public_tests` 或 `submit_solution`。 |
+| `verdict` | judge verdict。 |
+| `passed` / `total` / `pass_rate` | 本次工具执行的测试通过情况。 |
+| `code` | 本次工具调用执行的完整 Python 程序。 |
+| `code_hash` | 规范化文本 hash，用于重复代码检测。 |
+| `semantic_hash` | AST 级 hash，用于语义重复检测。 |
+| `observation` | 返回给模型的 observation 文本，仅用于复盘；reward 不从这里重新解析 verdict。 |
+| `first_failed` | 首个失败 case 的结构化信息；无失败时为 `null`。 |
+| `tool_reward` | verl tool 层即时 reward，主要用于 trace；最终训练 reward 由 `src/reward.py` 计算。 |
+| `error_kind` | reward/debug PRM 使用的粗粒度错误类型，如 `index_error`、`wrong_answer`。 |
 
 ### `episode`
 
@@ -183,7 +242,15 @@ no_submission
 | 字段 | 说明 |
 | --- | --- |
 | `acc` | 稳定评测口径，按最后一次正式提交计算：`1.0 if judge.final_submit_verdict == "accepted" else 0.0`。 |
-| `reward` | 训练优化目标，可随 reward 设计调整。它可以综合最终提交结果、失败通过比例、accepted 后继续调用工具、格式错误、超长等因素。 |
+| `acc_final` | 同 `acc`，显式表示最后一次 submit 是否 accepted。 |
+| `acc_any` | trajectory 中任意一次 submit accepted 即为 `1.0`。 |
+| `best_submit_pass_rate` | 所有 submit 中最佳 pass rate。 |
+| `last_submit_pass_rate` | 最后一次 submit 的 pass rate。 |
+| `reward` | 训练优化目标，当前为 `R_outcome + R_debug_prm + R_bad_pattern`。 |
+| `outcome_reward` | 最终正确性主奖励。 |
+| `debug_prm` | 反馈条件下 debug 过程奖励。 |
+| `bad_pattern` | 已知坏模式惩罚。 |
+| `reward_breakdown` | JSON 字符串，记录 reward 三项来源、submit 诊断和具体信号。 |
 
 ### `verl`
 
@@ -202,6 +269,7 @@ RL 训练时落盘的 rollout/sample JSONL 也使用同一套 schema。这样 va
 - training rollout：可按 step 写到 `rollout_data/{step}.jsonl` 或类似目录。
 - 同一 prompt 如果采样多条 rollout，每条 rollout 仍然是一行独立 JSONL。
 - `sample.task_id`、`trajectory`、`episode`、`judge`、`behavior`、`metrics` 的字段和口径保持一致。
+- reward 统计以 `trajectory.tool_events` / `metrics.reward_breakdown` 为准，不从 `trajectory.output` 反推 judge 结果。
 
 `verl.step` 用于定位训练步数；`verl.rollout_index` 用于区分同一 prompt 的多条采样。
 
@@ -213,6 +281,8 @@ RL 训练时落盘的 rollout/sample JSONL 也使用同一套 schema。这样 va
 episode.stop_reason = no_tool_call
 judge.final_submit_verdict = accepted
 metrics.acc = 1.0
+metrics.acc_final = 1.0
+metrics.acc_any = 1.0
 behavior.has_tool_call_after_submit_accepted = false
 ```
 
@@ -222,6 +292,8 @@ behavior.has_tool_call_after_submit_accepted = false
 judge.final_submit_verdict != accepted
 behavior.has_tool_call_after_submit_accepted = true
 metrics.acc = 0.0
+metrics.acc_final = 0.0
+metrics.acc_any = 1.0
 ```
 
 只通过 public tests 但没有正式提交：

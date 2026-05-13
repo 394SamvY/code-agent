@@ -14,12 +14,13 @@ verl 上游的 ``ToolAgentLoop`` 已经负责大部分通用能力：
 - 识别 no_tool_call、malformed_tool_call、response_length_exceeded 等停止原因
 - 给整条 trajectory 加一个总 tool call guard，避免模型无限工具循环
 
-注意：这里不直接计算最终 reward。最终训练 / 评测 reward 在 ``src/reward.py``
-里根据生成文本中的最后一次 ``submit_solution`` observation 计算。
+注意：这里不直接计算最终 reward；但会记录 ``code_agent_tool_events``。
+最终训练 / 评测 reward 在 ``src/reward.py`` 里只消费这些真实工具执行事件。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -37,6 +38,7 @@ _TERMINAL_KEY = "code_agent_terminal"
 _TERMINAL_REASON_KEY = "code_agent_terminal_reason"
 _PARSE_FAILURES_KEY = "code_agent_parse_failures"
 _TOOL_TAIL_CHARS_KEY = "code_agent_tool_tail_chars"
+_TOOL_EVENTS_KEY = "code_agent_tool_events"
 
 
 @register("code_agent_tool_agent")
@@ -61,6 +63,7 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         agent_data.extra_fields.setdefault(_TERMINAL_REASON_KEY, None)
         agent_data.extra_fields.setdefault(_PARSE_FAILURES_KEY, 0)
         agent_data.extra_fields.setdefault(_TOOL_TAIL_CHARS_KEY, 0)
+        agent_data.extra_fields.setdefault(_TOOL_EVENTS_KEY, [])
 
     def _trace(self, agent_data: AgentData) -> dict[str, Any]:
         """返回当前 trajectory 的结构化 trace，必要时创建默认结构。
@@ -72,7 +75,8 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         - 统计 terminal_reason、tool calls、judge runtime 等效率指标
         - 后续设计 reward 时区分“没提交”“最后一次提交失败”“AC 后继续工具”等行为
 
-        这里记录的是观测和诊断信息；最终 reward 口径仍由 ``src/reward.py`` 决定。
+        这里记录的是观测和诊断信息；``code_agent_tool_events`` 是最终 reward
+        的权威输入，reward 口径仍由 ``src/reward.py`` 决定。
         """
         self._ensure_extra_fields(agent_data)
         trace = agent_data.extra_fields.get(_TRACE_KEY)
@@ -98,6 +102,8 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
                 # 是否曾经提交 AC，以及 AC 后是否又调用任何工具。
                 "submit_accepted_seen": False,
                 "has_tool_call_after_submit_accepted": False,
+                "assistant_chars_after_submit_accepted": 0,
+                "assistant_tokens_after_submit_accepted": 0,
                 # rollout 级别的总 tool call guard，不等同于 submit 次数上限。
                 "max_tool_calls": self._max_tool_calls(agent_data),
                 # 工具调用 wall time 和 judge runtime，用来判断慢在模型还是环境。
@@ -236,7 +242,78 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         agent_data.extra_fields[_TOOL_TAIL_CHARS_KEY] = trace["tool_tail_chars"]
         return True
 
-    def _record_tool_result(self, agent_data: AgentData, result: dict[str, Any], tool_reward: float | None) -> None:
+    def _tool_call_arguments(self, tool_call) -> dict[str, Any]:
+        """Decode the model-generated tool arguments for structured reward events."""
+        try:
+            arguments = json.loads(getattr(tool_call, "arguments", "{}") or "{}")
+        except Exception:
+            return {}
+        return arguments if isinstance(arguments, dict) else {}
+
+    def _code_hash(self, code: Any) -> str | None:
+        if not isinstance(code, str):
+            return None
+        normalized = code.replace("\r\n", "\n").replace("\r", "\n")
+        normalized = "\n".join(line.rstrip() for line in normalized.split("\n")).strip()
+        if not normalized:
+            return None
+        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+    def _event_error_kind(self, result: dict[str, Any], observation: str) -> str | None:
+        verdict = str(result.get("verdict") or "")
+        first_failed = result.get("first_failed") if isinstance(result.get("first_failed"), dict) else {}
+        stderr = str(first_failed.get("stderr") or observation or "")
+        if "IndexError" in stderr or "index out of range" in stderr:
+            return "index_error"
+        if "KeyError" in stderr:
+            return "key_error"
+        if "RecursionError" in stderr or "maximum recursion depth exceeded" in stderr:
+            return "recursion_error"
+        if verdict == "time_limit_exceeded" or "Time Limit Exceeded" in stderr or "TLE" in stderr:
+            return "time_limit_exceeded"
+        if verdict in {"syntax_error", "runtime_error", "wrong_answer"}:
+            return verdict
+        return verdict or None
+
+    def _record_tool_event(
+        self,
+        agent_data: AgentData,
+        tool_call,
+        tool_response: ToolResponse,
+        result: dict[str, Any],
+        tool_reward: float | None,
+    ) -> None:
+        """Append one authoritative tool execution event for reward computation."""
+        self._ensure_extra_fields(agent_data)
+        arguments = self._tool_call_arguments(tool_call)
+        code = arguments.get("code")
+        if code is not None and not isinstance(code, str):
+            code = str(code)
+        observation = tool_response.text or ""
+        passed = int(result.get("passed") or 0)
+        total = int(result.get("total") or 0)
+        event = {
+            "index": len(agent_data.extra_fields[_TOOL_EVENTS_KEY]),
+            "tool": str(result.get("action") or getattr(tool_call, "name", "")),
+            "verdict": str(result.get("verdict") or "tool_execution_error"),
+            "passed": passed,
+            "total": total,
+            "pass_rate": passed / total if total else 0.0,
+            "code": code,
+            "code_hash": self._code_hash(code),
+            "observation": observation,
+            "first_failed": result.get("first_failed") if isinstance(result.get("first_failed"), dict) else None,
+            "tool_reward": float(tool_reward or 0.0),
+            "error_kind": self._event_error_kind(result, observation),
+        }
+        agent_data.extra_fields[_TOOL_EVENTS_KEY].append(event)
+
+    def _record_tool_result(
+        self,
+        agent_data: AgentData,
+        result: dict[str, Any],
+        tool_reward: float | None = None,
+    ) -> None:
         """把一次工具执行结果合并进 trace。
 
         ``result`` 是 OJ tool 返回的结构化 judge result，包含 action、verdict、
@@ -319,6 +396,15 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         no_tool_call。
         """
         state = await super()._handle_generating_state(agent_data, sampling_params, ignore_termination)
+        trace = self._trace(agent_data)
+        if trace.get("submit_accepted_seen") and agent_data.response_ids:
+            text = self.tokenizer.decode(agent_data.response_ids, skip_special_tokens=False)
+            trace["assistant_chars_after_submit_accepted"] = int(
+                trace.get("assistant_chars_after_submit_accepted", 0)
+            ) + len(text)
+            trace["assistant_tokens_after_submit_accepted"] = int(
+                trace.get("assistant_tokens_after_submit_accepted", 0)
+            ) + len(agent_data.response_ids)
         if state == AgentState.TERMINATED and agent_data.response_ids:
             tools = [tool.tool_schema for tool in self.tools.values()]
             _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
@@ -374,5 +460,7 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             float(trace.get("max_tool_wall_seconds", 0.0)),
             elapsed,
         )
-        self._record_tool_result(agent_data, result if isinstance(result, dict) else {}, tool_reward)
+        structured_result = result if isinstance(result, dict) else {}
+        self._record_tool_event(agent_data, tool_call, tool_response, structured_result, tool_reward)
+        self._record_tool_result(agent_data, structured_result, tool_reward)
         return tool_response, tool_reward, result

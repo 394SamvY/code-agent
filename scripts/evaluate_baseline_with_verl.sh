@@ -24,7 +24,7 @@ DATASET_ARG="${1:-codecontests_test}"
 MODEL_PATH="${2:-/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface}"
 
 CONFIG_PATH="$PROJECT_DIR/configs/verl"
-CONFIG_NAME="${CONFIG_NAME:-grpo_qwen3_8b}"
+CONFIG_NAME="${CONFIG_NAME:-eval_qwen3_8b}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_DIR/outputs/verl_baseline_eval}"
 DEFAULT_CUDA_VISIBLE_DEVICES="${DEFAULT_CUDA_VISIBLE_DEVICES:-0,1}"
 

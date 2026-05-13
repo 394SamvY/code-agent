@@ -1,0 +1,85 @@
+# OJ-like validation/evaluation config for Qwen3-8B.
+#
+# This file is intentionally kept separate from GRPO training config.
+# Baseline eval scripts override most runtime fields from the command line, but
+# keeping a dedicated eval base prevents training-only changes from affecting
+# validation worker construction or inherited Hydra defaults.
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: ./data/verl/codecontests_valid.parquet
+  val_files: ./data/verl/codecontests_valid.parquet
+  train_batch_size: 32
+  return_raw_chat: true
+  apply_chat_template_kwargs:
+    enable_thinking: true
+
+actor_rollout_ref:
+  model:
+    path: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface
+    enable_gradient_checkpointing: true
+
+  actor:
+    ppo_micro_batch_size_per_gpu: 1
+    use_torch_compile: false
+    checkpoint:
+      save_contents:
+        - model
+    fsdp_config:
+      param_offload: true
+      optimizer_offload: true
+
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    use_torch_compile: false
+
+  rollout:
+    name: sglang
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.88
+    response_length: 8192
+    max_model_len: 12288
+    max_num_batched_tokens: 49152
+    max_num_seqs: 64
+    enforce_eager: true
+    log_prob_micro_batch_size_per_gpu: 1
+    n: 1
+    agent:
+      num_workers: 64
+      default_agent_loop: code_agent_tool_agent
+      agent_loop_config_path: configs/verl/code_agent_loop.yaml
+    val_kwargs:
+      n: 1
+      temperature: 0
+      top_p: 0.95
+      top_k: 20
+      do_sample: false
+    multi_turn:
+      enable: true
+      tool_config_path: configs/verl/tool_config.yaml
+      tokenization_sanity_check_mode: ignore_strippable
+
+reward:
+  num_workers: 2
+  custom_reward_function:
+    path: src/reward.py
+    name: compute_score
+
+algorithm:
+  adv_estimator: grpo
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 2
+  val_only: true
+  val_before_train: true
+  save_freq: -1
+  test_freq: -1
+  project_name: code-agent-baseline-eval
+  experiment_name: qwen3-8b-eval
+  logger:
+    - console
+  log_val_generations: 1

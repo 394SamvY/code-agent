@@ -1,6 +1,6 @@
 # 评测效率实验计划
 
-更新日期：2026-05-09
+更新日期：2026-05-13
 
 ## 目标
 
@@ -46,7 +46,7 @@ ROLLOUT_TP=1
 | assistant tokens/problem | 只统计 `messages` 中 `role == "assistant"` 的 `content` 和 `tool_calls`，不统计 `role == "tool"` 的 judge 返回 |
 | assistant tok/s | `assistant tokens / ready-to-end time` |
 | tool response tokens/problem | 只统计 `role == "tool"` 的 observation token，用于确认环境反馈占比 |
-| score / acc | verl validation 输出的效果指标 |
+| score / acc | verl validation 输出的效果指标；当前新轨迹额外记录 `acc_any`、`best_submit_pass_rate`、`last_submit_pass_rate` 和 `reward_breakdown` |
 | tool calls/problem | 平均工具调用次数 |
 | terminal_reason | `no_tool_call`、`accepted`、`tool_call_limit_exhausted` 等终止原因分布 |
 | cap hit rate | assistant tokens 打满 `MAX_RESPONSE_LENGTH` 的比例 |
@@ -213,8 +213,8 @@ terminal / tool 分布：
 - 16 样本 smoke 明显低估吞吐。之前 16 样本约 `260-317 assistant tok/s`，A3 到 `549.5 assistant tok/s`，说明 128 样本能更充分打满 SGLang/agent 链路。
 - 当前主要瓶颈仍是单题 assistant 输出过长，不是 tool observation 或 judge。`tool_wall_time=517.8s` 只占 ready-to-end 的约 10.9%，主耗时是 SGLang decode。
 - 最大 token 来源是 `no_tool_call` 长输出，尤其 `num_tool_calls=0` 的 54 条，平均接近打满 `MAX_RESPONSE_LENGTH=28672`。这说明模型经常长时间思考但没有进入工具调用。
-- `tool_call_limit_exhausted` 不是最大 token 来源，但暴露出 accepted 后继续调用工具的行为问题。当前 reward / `acc` 口径按 `src/reward.py` 里的最后一次 `submit_solution` observation 计算，不是 `max(tool_rewards)`；因此 accepted 后如果没有新的 submit，`acc` 仍为 1，如果后续又 submit 失败，则以最后一次失败 submit 为准。
-- 这符合后续 RL 可优化方向：奖励 `submit accepted -> 简短收尾 -> no_tool_call`，惩罚 accepted 后继续工具调用、无工具长思考、撞工具上限等行为。
+- `tool_call_limit_exhausted` 不是最大 token 来源，但暴露出 accepted 后继续调用工具的行为问题。当前 reward 只消费 agent loop 记录的结构化 `code_agent_tool_events`；`acc_final` 按最后一次 `submit_solution` 计算，`acc_any` 记录任意一次正式提交 AC。历史 A3 运行早于这些额外诊断字段，因此这里只能把 `acc` 当作 last-submit 口径解读。
+- 这符合后续 RL 可优化方向：通过 `R_debug_prm` 奖励有效修复，通过 `R_bad_pattern` 惩罚 accepted 后继续工具调用、无工具长思考、撞工具上限等行为。
 
 按 A3 结果外推：
 

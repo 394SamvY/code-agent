@@ -1,6 +1,6 @@
 # 项目状态
 
-更新日期：2026-05-09
+更新日期：2026-05-13
 
 ## 项目背景
 
@@ -10,11 +10,17 @@
 - 环境动作：`run_public_tests` 和 `submit_solution`。
 - 评测入口：`scripts/evaluate_baseline_with_verl.sh`，复用 verl 原生 validation / `ToolAgentLoop` 路径。
 - baseline 评测输出统一保存在 `outputs/verl_baseline_eval/`。
-- RL链路待讨论
+- RL 链路暂定 GRPO，训练参数已先固定为 10-step 计时/跑通配置。
 
 ## 当前状态
 
 OJ-like v1 的数据、tool、reward 和 verl validation 评测链路已经接通。此前主要 blocker 是评测效率过低；经过 response budget 和并发参数实验后，当前默认评测参数已经写入 `scripts/evaluate_baseline_with_verl.sh`，两次正式 full eval 都在 2 小时目标内完成。
+
+评测配置和训练配置已经分离：
+
+- baseline eval 默认使用 `configs/verl/eval_qwen3_8b.yaml`。
+- GRPO 训练使用 `configs/verl/grpo_qwen3_8b.yaml`。
+- `scripts/evaluate_baseline_with_verl.sh` 默认 `CONFIG_NAME=eval_qwen3_8b`，后续训练参数调整不再影响 baseline eval 默认入口。
 
 当前默认评测参数：
 
@@ -58,9 +64,82 @@ ROLLOUT_TP=1
 - `MAX_RESPONSE_LENGTH=8192` 是当前默认预算。它显著减少无效长思考，并在固定 128 条对比中保持和 28672 budget 相同的 accepted 数；但 `response_cap_hit` 仍高，说明模型行为还没有真正学会主动短路径。
 - `VAL_BATCH_SIZE=64`、`AGENT_WORKERS=64`、`MAX_NUM_SEQS=64`、`GPU_MEMORY_UTILIZATION=0.88` 是当前稳定高吞吐配置。更激进的 `mem0.95` / 高并发尝试没有证明收益，且存在线程资源风险。
 - 模型已经能产生 tool call；此前“tool-call rate = 0%”是因为脚本缺少 `actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent`，误走了 verl 默认 single-turn agent。
-- 当前 reward / `acc` 口径按 `src/reward.py` 里的最后一次 `submit_solution` observation 计算，不是 `max(tool_rewards)`。如果某次 accepted 后只继续 `run_public_tests` 或普通文本、不再发生新的 submit，那么最后一次 submit 仍是 accepted；如果后续又 submit 失败，则以最后一次失败 submit 为准。RL 训练阶段仍需要通过调整reward来约束 accepted 后停止、无工具长思考和撞工具上限。
+- 当前 reward 只消费 agent loop 记录的结构化 `code_agent_tool_events`，不再解析 `solution_str`。`acc` / `acc_final` 按最后一次 `submit_solution` 事件计算，不是 `max(tool_rewards)`；如果 AC 后又 submit 失败，则 `acc_final=0`。`acc_any`、`best_submit_pass_rate` 和 `last_submit_pass_rate` 会写入 `reward_breakdown`，用于区分“不会解题”和“会解题但不会停止”。RL 训练阶段继续通过 `R_debug_prm` 和 `R_bad_pattern` 约束有效 debug、accepted 后停止、无工具长思考和撞工具上限。
+
+## GRPO 训练配置
+
+当前 GRPO 训练入口为 `configs/verl/grpo_qwen3_8b.yaml`。`train_20260511_024102.log` 已完整跑通 10 个 global step，并写出 `checkpoints/global_step_10/actor/huggingface`。
+
+显存相关配置和 OOM 调试记录见 [`docs/grpo_memory_config.md`](grpo_memory_config.md)。
+
+关键参数：
+
+```text
+model.path=/root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface
+data.train_files=./data/verl/codecontests_train.parquet
+data.train_batch_size=64
+data.max_prompt_length=4096
+data.max_response_length=8192
+actor_rollout_ref.rollout.n=4
+actor_rollout_ref.actor.ppo_mini_batch_size=16
+actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1
+actor_rollout_ref.actor.ppo_epochs=1
+actor_rollout_ref.actor.use_kl_loss=true
+actor_rollout_ref.actor.kl_loss_coef=0.001
+actor_rollout_ref.rollout.gpu_memory_utilization=0.88
+actor_rollout_ref.rollout.max_model_len=12288
+actor_rollout_ref.rollout.max_num_batched_tokens=32768
+actor_rollout_ref.rollout.max_num_seqs=64
+actor_rollout_ref.rollout.agent.num_workers=64
+actor_rollout_ref.actor.fsdp_config.param_offload=true
+actor_rollout_ref.actor.fsdp_config.optimizer_offload=true
+actor_rollout_ref.ref.fsdp_config.param_offload=true
+actor_rollout_ref.actor.entropy_checkpointing=true
+actor_rollout_ref.actor.entropy_from_logits_with_chunking=true
+trainer.total_training_steps=10
+trainer.test_freq=-1
+trainer.save_freq=10
+trainer.resume_mode=disable
+```
+
+当前 `codecontests_train.parquet` 重新统计为 9323 条。按当前配置：
+
+```text
+每个外层 step: 64 prompts * 4 samples = 256 trajectories
+每个外层 step: ppo_mini_batch_size=16 prompts => 4 次 actor optimizer update
+10-step 计时实验: 640 prompt 槽位，2560 trajectories，40 次 actor optimizer update
+完整 1 epoch: floor(9323 / 64) = 145 个外层 step
+```
+
+checkpoint 策略：
+
+- actor 只保存 `hf_model`，不保存 FSDP model shard、optimizer 或 extra state。
+- 因为只保存 HF 权重，当前禁用自动 resume；如需继续训练，应把上一次产物的 `actor/huggingface/` 目录作为新的 `model.path` 重新启动。
+
+10-step 跑通指标：
+
+```text
+平均 step time: 1582.3s = 26.4min
+平均 rollout gen: 931.3s
+平均 actor update: 425.2s
+max_memory_allocated: 59.72GB
+max_memory_reserved: 76.36GB
+```
+
+按当前 `codecontests_train.parquet` 9323 条、`train_batch_size=64` 估算：
+
+```text
+完整 1 epoch: 145 个外层 step
+预计耗时: 约 64 小时
+```
+
+后续项：
+
+- 如需全量训练，可用当前显存配置继续长跑。
+- 若仍在 actor backward OOM，优先按 `docs/grpo_memory_config.md` 启用 activation offload 或临时关闭 entropy bonus；只有 rollout/SGLang 阶段 OOM 时才下调 rollout 并发和 KV-cache 参数。
 
 ## 下一步
 
-1. 进入 RL 方案设计：优先围绕 `submit accepted -> 简短收尾 -> 停止`、减少无工具长思考、避免 accepted 后继续工具调用来设计 reward / stop 行为约束。
-2. 用当前默认评测参数量化基础模型与 SFT checkpoint 的差异，至少记录 `acc`、`score`、平均 tool calls、平均 turns、terminal_reason 分布和 assistant tokens/problem。
+1. 用当前配置继续长跑完整训练集，同时监控显存、step time、rollout length 和 tool 行为。
+2. 长跑稳定后恢复小样本 validation，例如 `val_max_samples=128`、`test_freq` 按阶段设置，并评估训练后 checkpoint。
+3. 长跑时重点监控 `acc_any - acc_final`、accepted 后继续工具调用、response cap hit、`debug_prm_mean` 和 `bad_pattern_mean`，再决定是否调整 reward 权重。

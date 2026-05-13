@@ -349,8 +349,8 @@ def reward_for_result(result: dict[str, Any]) -> float:
       - submit 失败时根据失败比例阶梯给分：0~0.2 太粗，可以更细粒度
       - 区分 verdict 类型：runtime_error 比 wrong_answer 更严重，可以不同惩罚
       - 解空间探索奖励：调用工具次数、代码修改幅度、尝试不同算法
-      - 最终 reward 聚合策略：当前 src/reward.py 按最后一次 submit observation 计算，
-        后续可以尝试 avg、历史最佳、递减折扣等口径
+      - 最终 reward 聚合策略：当前 src/reward.py 消费 agent loop 记录的结构化
+        tool events，默认按最后一次 submit 计算 outcome；后续可以尝试历史最佳等口径
       - 代码风格/简洁度：字符数、运行时间作为辅助奖励
     """
     total = result["total"]

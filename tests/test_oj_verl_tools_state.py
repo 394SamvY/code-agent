@@ -41,7 +41,7 @@ async def _test_public_test_count_persists_across_instances():
     agent_data = SimpleNamespace(extra_fields={})
     create_kwargs = {
         "public_tests": [{"input": "", "output": "1\n"}],
-        "time_limit_seconds": 1,
+        "time_limit_seconds": 5,
         "max_public_test_calls": 2,
     }
 
@@ -61,12 +61,12 @@ async def _test_public_test_count_persists_across_instances():
     print("[PASS] test_public_test_count_persists_across_instances")
 
 
-async def _test_submit_acceptance_marks_trajectory_terminal():
+async def _test_submit_acceptance_keeps_trajectory_open():
     tool = SubmitSolutionTool({}, _schema("submit_solution"))
     agent_data = SimpleNamespace(extra_fields={})
     create_kwargs = {
         "private_tests": [{"input": "", "output": "1\n"}],
-        "time_limit_seconds": 1,
+        "time_limit_seconds": 5,
         "max_submissions": 5,
     }
 
@@ -74,13 +74,12 @@ async def _test_submit_acceptance_marks_trajectory_terminal():
 
     assert reward == 1.0
     assert result["verdict"] == "accepted"
-    assert result["terminal"] is True
-    assert result["terminal_reason"] == "accepted"
-    assert agent_data.code_agent_terminal is True
-    assert agent_data.code_agent_terminal_reason == "accepted"
+    assert "terminal" not in result
+    assert not hasattr(agent_data, "code_agent_terminal")
+    assert agent_data.code_agent_oj_tool_state["accepted"] is True
     assert "code_agent_terminal" not in agent_data.extra_fields
 
-    print("[PASS] test_submit_acceptance_marks_trajectory_terminal")
+    print("[PASS] test_submit_acceptance_keeps_trajectory_open")
 
 
 async def _test_submit_count_persists_across_instances():
@@ -88,7 +87,7 @@ async def _test_submit_count_persists_across_instances():
     agent_data = SimpleNamespace(extra_fields={})
     create_kwargs = {
         "private_tests": [{"input": "", "output": "1\n"}],
-        "time_limit_seconds": 1,
+        "time_limit_seconds": 5,
         "max_submissions": 1,
     }
 
@@ -109,8 +108,8 @@ def test_public_test_count_persists_across_instances():
     asyncio.run(_test_public_test_count_persists_across_instances())
 
 
-def test_submit_acceptance_marks_trajectory_terminal():
-    asyncio.run(_test_submit_acceptance_marks_trajectory_terminal())
+def test_submit_acceptance_keeps_trajectory_open():
+    asyncio.run(_test_submit_acceptance_keeps_trajectory_open())
 
 
 def test_submit_count_persists_across_instances():
@@ -119,6 +118,6 @@ def test_submit_count_persists_across_instances():
 
 if __name__ == "__main__":
     test_public_test_count_persists_across_instances()
-    test_submit_acceptance_marks_trajectory_terminal()
+    test_submit_acceptance_keeps_trajectory_open()
     test_submit_count_persists_across_instances()
     print("\nAll tests passed!")

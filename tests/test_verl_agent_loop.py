@@ -9,6 +9,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.verl_agent_loop import CodeAgentToolAgentLoop
+from verl.tools.schemas import ToolResponse
 
 
 def _agent() -> CodeAgentToolAgentLoop:
@@ -41,6 +42,7 @@ def test_trace_initializes_stable_extra_field_keys():
     assert data.extra_fields["code_agent_terminal_reason"] is None
     assert data.extra_fields["code_agent_parse_failures"] == 0
     assert data.extra_fields["code_agent_tool_tail_chars"] == 0
+    assert data.extra_fields["code_agent_tool_events"] == []
     assert data.extra_fields["code_agent_trace"]["num_tool_calls"] == 0
 
 
@@ -102,6 +104,33 @@ def test_submit_accepted_does_not_mark_terminal():
     assert data.extra_fields["code_agent_trace"]["submission_count"] == 1
 
 
+def test_record_tool_event_stores_structured_reward_input():
+    agent = _agent()
+    data = _agent_data()
+    tool_call = SimpleNamespace(name="run_public_tests", arguments='{"code": "print(1)"}')
+
+    agent._record_tool_event(
+        data,
+        tool_call,
+        ToolResponse(text="run_public_tests: accepted. 1/1 tests passed."),
+        {
+            "action": "run_public_tests",
+            "verdict": "accepted",
+            "passed": 1,
+            "total": 1,
+            "first_failed": None,
+        },
+        0.0,
+    )
+
+    events = data.extra_fields["code_agent_tool_events"]
+    assert len(events) == 1
+    assert events[0]["tool"] == "run_public_tests"
+    assert events[0]["verdict"] == "accepted"
+    assert events[0]["code"] == "print(1)"
+    assert events[0]["pass_rate"] == 1.0
+
+
 def test_no_tool_call_marks_normal_terminal_reason():
     agent = _agent()
     data = _agent_data()
@@ -130,6 +159,7 @@ if __name__ == "__main__":
     test_public_limit_result_does_not_mark_terminal()
     test_public_test_accepted_does_not_mark_terminal()
     test_submit_accepted_does_not_mark_terminal()
+    test_record_tool_event_stores_structured_reward_input()
     test_no_tool_call_marks_normal_terminal_reason()
     test_hard_cap_marks_terminal()
     print("\nAll tests passed!")
