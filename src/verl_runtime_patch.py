@@ -39,6 +39,7 @@ _CODE_AGENT_DUMP_ONLY_KEYS = (
     "code_agent_parse_failures",
     "code_agent_tool_tail_chars",
 )
+_CANONICAL_REWARD_EXTRA_KEYS = frozenset({"reward"})
 
 
 def _now_for_log() -> str:
@@ -77,6 +78,20 @@ def _values_to_list(values: Any) -> list[Any]:
     if isinstance(values, list):
         return values
     return [values]
+
+
+def _append_reward_extra_infos(
+    reward_extra_infos_dict: dict[str, list[Any]],
+    batch_reward_extra_infos: dict[str, list[Any]],
+    reward_extra_info: dict[str, Any],
+) -> None:
+    """Merge custom reward diagnostics without overriding canonical fields."""
+    for key, values in reward_extra_info.items():
+        if key in _CANONICAL_REWARD_EXTRA_KEYS:
+            continue
+        values_list = _values_to_list(values)
+        batch_reward_extra_infos[key] = values_list
+        reward_extra_infos_dict.setdefault(key, []).extend(values_list)
 
 
 def _float_at(values: Any, index: int, default: float = 0.0) -> float:
@@ -779,13 +794,11 @@ def _install_validation_partial_dump_patch() -> None:
 
             batch_reward_extra_infos = {"reward": list(scores)}
             reward_extra_infos_dict["reward"].extend(scores)
-            for key, values in reward_extra_info.items():
-                values_list = values.tolist() if isinstance(values, np.ndarray) else values
-                values_list = values_list if isinstance(values_list, list) else [values_list]
-                batch_reward_extra_infos[key] = values_list
-                if key not in reward_extra_infos_dict:
-                    reward_extra_infos_dict[key] = []
-                reward_extra_infos_dict[key].extend(values_list)
+            _append_reward_extra_infos(
+                reward_extra_infos_dict,
+                batch_reward_extra_infos,
+                reward_extra_info,
+            )
 
             # These are produced inside the real AgentLoopWorker and are not
             # reward outputs. Copy them directly so generation dumps can audit
