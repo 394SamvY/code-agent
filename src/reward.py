@@ -21,7 +21,8 @@ TRACE_KEY = "code_agent_trace"
 OUTCOME_SUBMIT_POLICY = "last_submit"
 
 DEBUG_MIN = -0.10
-DEBUG_MAX = 0.10
+DEBUG_MAX = 0.15
+WEAK_WA_LOGIC_CHANGED_BONUS = 0.005
 BAD_PATTERN_MIN = -0.40
 BAD_PATTERN_MAX = 0.0
 FINAL_MIN = -0.50
@@ -299,9 +300,16 @@ def _add_signal(signals: dict[str, float], key: str, value: float) -> None:
         signals[key] = signals.get(key, 0.0) + value
 
 
-def _progress_bonus(prev: RewardEvent, next_event: RewardEvent, weight: float) -> tuple[float, str | None]:
-    rank_delta = _state_rank(next_event) - _state_rank(prev)
-    pass_delta = next_event.pass_rate - prev.pass_rate
+def _progress_bonus(
+    prev: RewardEvent,
+    next_event: RewardEvent,
+    weight: float,
+    *,
+    best_rank: int,
+    best_pass_rate: float,
+) -> tuple[float, str | None]:
+    rank_delta = _state_rank(next_event) - max(_state_rank(prev), best_rank)
+    pass_delta = next_event.pass_rate - max(prev.pass_rate, best_pass_rate)
     rank_bonus = min(0.04, 0.015 * rank_delta) if rank_delta > 0 else 0.0
     pass_bonus = min(0.03, 0.03 * pass_delta) if pass_delta > 0 else 0.0
     if rank_bonus >= pass_bonus and rank_bonus > 0:
@@ -318,20 +326,21 @@ def _alignment_bonus(
     weight: float,
     progress_bonus: float,
     allow_weak_wa: bool,
+    allow_positive_bonus: bool,
 ) -> tuple[float, str | None]:
     next_rank = _state_rank(next_event)
     prev_rank = _state_rank(prev)
     aligned = _repair_aligned(prev, next_event)
-    if aligned and next_rank >= prev_rank:
+    if aligned and next_rank >= prev_rank and allow_positive_bonus:
         if prev.error_kind == "time_limit_exceeded" and progress_bonus <= 0:
             return 0.0, None
         value = 0.02 if prev.error_kind == "time_limit_exceeded" else 0.03
         return weight * value, "feedback_aligned_not_worse"
     if aligned and next_rank < prev_rank:
         return -weight * 0.02, "feedback_aligned_but_worse"
-    if allow_weak_wa and prev.error_kind == "wrong_answer" and prev.code and next_event.code:
+    if allow_positive_bonus and allow_weak_wa and prev.error_kind == "wrong_answer" and prev.code and next_event.code:
         if _logic_changed(prev.code, next_event.code) and next_rank >= prev_rank:
-            return weight * 0.015, "wrong_answer_logic_changed_not_worse"
+            return weight * WEAK_WA_LOGIC_CHANGED_BONUS, "wrong_answer_logic_changed_not_worse"
     return 0.0, None
 
 
@@ -343,6 +352,8 @@ def _transition_debug_score(
     allow_progress: bool,
     allow_alignment: bool,
     allow_weak_wa: bool,
+    best_rank: int,
+    best_pass_rate: float,
 ) -> tuple[float, dict[str, float]]:
     signals: dict[str, float] = {}
     if not prev.code or not next_event.code:
@@ -362,8 +373,15 @@ def _transition_debug_score(
 
     score = 0.0
     progress_value = 0.0
+    positive_allowed = _state_rank(next_event) > best_rank or next_event.pass_rate > best_pass_rate
     if allow_progress:
-        progress_value, progress_key = _progress_bonus(prev, next_event, weight)
+        progress_value, progress_key = _progress_bonus(
+            prev,
+            next_event,
+            weight,
+            best_rank=best_rank,
+            best_pass_rate=best_pass_rate,
+        )
         if progress_key:
             score += progress_value
             _add_signal(signals, progress_key, progress_value)
@@ -375,6 +393,7 @@ def _transition_debug_score(
             weight=weight,
             progress_bonus=progress_value,
             allow_weak_wa=allow_weak_wa,
+            allow_positive_bonus=positive_allowed,
         )
         if alignment_key:
             score += alignment_value
@@ -392,8 +411,18 @@ def _compute_debug_prm(events: list[RewardEvent]) -> tuple[float, dict[str, floa
     public_debug_score = 0.0
     submit_debug_score = 0.0
     signals: dict[str, float] = {}
+    best_rank_by_tool = {"run_public_tests": -1, "submit_solution": -1}
+    best_pass_rate_by_tool = {"run_public_tests": -1.0, "submit_solution": -1.0}
+
+    def update_best(event: RewardEvent) -> None:
+        best_rank_by_tool[event.tool] = max(best_rank_by_tool[event.tool], _state_rank(event))
+        best_pass_rate_by_tool[event.tool] = max(best_pass_rate_by_tool[event.tool], event.pass_rate)
+
     for prev, next_event in zip(events, events[1:]):
+        update_best(prev)
         pair = (prev.tool, next_event.tool)
+        best_rank = best_rank_by_tool[next_event.tool]
+        best_pass_rate = best_pass_rate_by_tool[next_event.tool]
         if pair == ("run_public_tests", "run_public_tests"):
             score, transition_signals = _transition_debug_score(
                 prev,
@@ -402,6 +431,8 @@ def _compute_debug_prm(events: list[RewardEvent]) -> tuple[float, dict[str, floa
                 allow_progress=True,
                 allow_alignment=True,
                 allow_weak_wa=True,
+                best_rank=best_rank,
+                best_pass_rate=best_pass_rate,
             )
             public_debug_score += score
         elif pair == ("submit_solution", "submit_solution"):
@@ -412,6 +443,8 @@ def _compute_debug_prm(events: list[RewardEvent]) -> tuple[float, dict[str, floa
                 allow_progress=True,
                 allow_alignment=True,
                 allow_weak_wa=True,
+                best_rank=best_rank,
+                best_pass_rate=best_pass_rate,
             )
             submit_debug_score += score
         elif pair == ("submit_solution", "run_public_tests"):
@@ -422,13 +455,17 @@ def _compute_debug_prm(events: list[RewardEvent]) -> tuple[float, dict[str, floa
                 allow_progress=False,
                 allow_alignment=next_event.pass_rate > 0 or next_event.verdict == "accepted",
                 allow_weak_wa=False,
+                best_rank=best_rank,
+                best_pass_rate=best_pass_rate,
             )
             submit_debug_score += score
         else:
+            update_best(next_event)
             continue
 
         for key, value in transition_signals.items():
             _add_signal(signals, key, value)
+        update_best(next_event)
 
     submit_debug_score = _clamp(submit_debug_score, -0.03, 0.03)
     return _clamp(public_debug_score + submit_debug_score, DEBUG_MIN, DEBUG_MAX), signals
@@ -614,6 +651,9 @@ def compute_score(
         policy=submit_policy,
     )
     debug_prm, debug_signals = _compute_debug_prm(events)
+    if not submit_events and debug_prm > 0:
+        _add_signal(debug_signals, "no_submit_positive_debug_clamped", -debug_prm)
+        debug_prm = 0.0
     bad_pattern, bad_patterns = _compute_bad_pattern_penalty(
         events,
         trace=trace,

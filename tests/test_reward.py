@@ -2,6 +2,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -32,7 +33,7 @@ def _breakdown(result):
     return json.loads(result["reward_breakdown"])
 
 
-def _assert_score(events, expected: float, *, acc: float | None = None, **extra_info):
+def _assert_score(events, expected: float, *, acc: Optional[float] = None, **extra_info):
     result = _score(events, **extra_info)
     assert math.isclose(result["score"], expected, abs_tol=1e-9)
     assert math.isclose(result["reward"], expected, abs_tol=1e-9)
@@ -138,12 +139,53 @@ def test_debug_prm_rewards_feedback_conditioned_improvement():
             error_kind="index_error",
         ),
         _event("run_public_tests", "wrong_answer", 1, 2, code=new),
+        _event("submit_solution", "wrong_answer", 0, 10, code=new),
     ]
-    result = _assert_score(events, -0.255, acc=0.0)
+    result = _assert_score(events, -0.055, acc=0.0)
     signals = _breakdown(result)["debug_signals"]
     assert signals["state_rank_improved"] == 0.015
     assert "pass_rate_improved" not in signals
     assert signals["feedback_aligned_not_worse"] == 0.03
+
+
+def test_weak_wrong_answer_logic_change_bonus_is_small():
+    events = [
+        _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
+        _event("run_public_tests", "wrong_answer", 1, 2, code="print(1)"),
+        _event("submit_solution", "wrong_answer", 0, 10, code="print(1)"),
+    ]
+    result = _assert_score(events, -0.08, acc=0.0)
+    bd = _breakdown(result)
+    assert bd["debug_prm"] == 0.02
+    assert bd["debug_signals"]["pass_rate_improved"] == 0.015
+    assert bd["debug_signals"]["wrong_answer_logic_changed_not_worse"] == 0.005
+
+
+def test_debug_prm_progress_only_counts_new_best_state():
+    events = [
+        _event("run_public_tests", "syntax_error", 0, 2, code="print("),
+        _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
+        _event("run_public_tests", "syntax_error", 0, 2, code="print("),
+        _event("run_public_tests", "wrong_answer", 0, 2, code="print(1)"),
+        _event("submit_solution", "wrong_answer", 0, 10, code="print(1)"),
+    ]
+    result = _score(events)
+    bd = _breakdown(result)
+    assert bd["debug_signals"]["state_rank_improved"] == 0.03
+    assert "wrong_answer_logic_changed_not_worse" not in bd["debug_signals"]
+    assert bd["debug_prm"] == 0.03
+
+
+def test_no_submit_caps_positive_debug_prm_to_zero():
+    events = [
+        _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
+        _event("run_public_tests", "accepted", 2, 2, code="print(1)"),
+    ]
+    result = _assert_score(events, -0.4, acc=0.0)
+    bd = _breakdown(result)
+    assert bd["debug_prm"] == 0.0
+    assert bd["bad_patterns"]["no_submit"] == -0.3
+    assert bd["bad_patterns"]["public_acc_no_submit"] == -0.2
 
 
 def test_public_to_submit_does_not_get_debug_bonus():
@@ -168,7 +210,7 @@ def test_submit_debug_bonus_is_weak_and_capped():
         _event("submit_solution", "wrong_answer", 8, 10, code="print(1)"),
         _event("submit_solution", "accepted", 10, 10, code="print(2)"),
     ]
-    result = _assert_score(events, 0.9798, acc=1.0)
+    result = _assert_score(events, 0.9738, acc=1.0)
     bd = _breakdown(result)
     assert bd["debug_prm"] <= 0.03
     assert bd["bad_patterns"]["too_many_submits"] == -0.04
@@ -221,6 +263,9 @@ if __name__ == "__main__":
     test_no_submit_bad_pattern_penalty()
     test_response_truncated_bad_pattern_penalty()
     test_debug_prm_rewards_feedback_conditioned_improvement()
+    test_weak_wrong_answer_logic_change_bonus_is_small()
+    test_debug_prm_progress_only_counts_new_best_state()
+    test_no_submit_caps_positive_debug_prm_to_zero()
     test_public_to_submit_does_not_get_debug_bonus()
     test_submit_debug_bonus_is_weak_and_capped()
     test_duplicate_and_tool_count_bad_patterns()

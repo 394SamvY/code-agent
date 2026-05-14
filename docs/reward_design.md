@@ -31,7 +31,7 @@ R = clamp(R, -0.5, 1.0)
 | 项 | 范围 | 职责 |
 | --- | ---: | --- |
 | `R_outcome` | `[0, 1]` | 最终提交正确性，主奖励 |
-| `R_debug_prm` | `[-0.10, 0.10]` | 反馈条件下的有效 debug |
+| `R_debug_prm` | `[-0.10, 0.15]` | 反馈条件下的有效 debug |
 | `R_bad_pattern` | `[-0.40, 0]` | 已知坏模式惩罚 |
 
 `acc` 仍是稳定评测指标：最后一次 `submit_solution` 为 `accepted` 时为 `1.0`，否则为 `0.0`。
@@ -128,7 +128,26 @@ public feedback 权重为 `1.0`，submit feedback 权重为 `0.3`，避免模型
 
 进步奖励使用分层优先级，`state_rank_improved` 和 `pass_rate_improved` 不同时叠加，而是取较大的 progress bonus，再额外叠加 alignment bonus。
 
-当前高置信对齐规则只覆盖 `IndexError`、`KeyError`、`RecursionError`。`time_limit_exceeded` 只有在复杂度相关修改后结果同时变好时才给 alignment bonus。`wrong_answer` 不算高置信 alignment，只保留弱的 `wrong_answer_logic_changed_not_worse` 信号。
+正向 debug 信号只在对应 tool 类型的历史 best-so-far 状态被刷新时给分：
+
+```text
+next_state_rank > best_state_rank_so_far
+or
+next_pass_rate > best_pass_rate_so_far
+```
+
+这样避免模型在 `syntax_error -> wrong_answer -> syntax_error -> wrong_answer` 或相同通过率之间来回震荡时重复拿过程分。
+
+当前高置信对齐规则只覆盖 `IndexError`、`KeyError`、`RecursionError`。`time_limit_exceeded` 只有在复杂度相关修改后结果同时变好时才给 alignment bonus。`wrong_answer` 不算高置信 alignment，只保留很弱的 `wrong_answer_logic_changed_not_worse` 信号，单次贡献为 `0.005 * weight`，且同样受 best-so-far 约束。
+
+没有任何 `submit_solution` 的 trajectory 不允许拿正向 debug 分：
+
+```text
+if no_submit and R_debug_prm > 0:
+    R_debug_prm = 0
+```
+
+负向 debug 信号仍保留，例如失败反馈后同代码重试仍会扣分。
 
 ## Bad Pattern Penalty
 

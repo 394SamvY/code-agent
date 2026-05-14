@@ -56,7 +56,7 @@ actor_rollout_ref:
     # 梯度会累积到完整 PPO mini-batch 后再更新。
     ppo_micro_batch_size_per_gpu: 1
     # 同一批 rollout 数据重复训练几遍。
-    ppo_epochs: 2
+    ppo_epochs: 3
     # KL loss 把策略约束在 reference/SFT 模型附近，避免 GRPO 早期训歪。
     use_kl_loss: true
     kl_loss_coef: 0.01
@@ -149,13 +149,13 @@ trainer:
   n_gpus_per_node: 2
   # 外层 training step 数。每步包含 rollout、reward、advantage、actor update
   # 和 rollout 权重同步。
-  total_training_steps: 60
+  total_training_steps: 5
   # 避免首次更新前先跑一次较慢的 validation。
   val_before_train: true
   # 当前只保存 hf_model，不保存 optimizer/extra/FSDP shard，因此禁用自动 resume，
   # 避免误从只有 HF 权重的 checkpoint 里恢复训练状态。
   resume_mode: disable
-  save_freq: 15
+  save_freq: 5
   # 10-step 计时实验先不跑 validation，避免验证耗时污染每步训练耗时估计。
   test_freq: 5
   max_actor_ckpt_to_keep: 1
