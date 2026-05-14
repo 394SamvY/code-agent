@@ -65,7 +65,8 @@ actor_rollout_ref:
 reward:
   num_workers: 2
   custom_reward_function:
-    path: src/reward.py
+    # Use package import so dataclasses can resolve sys.modules during verl's dynamic load.
+    path: pkg://src/reward
     name: compute_score
 
 algorithm:

@@ -29,7 +29,7 @@ FINAL_MAX = 1.00
 NON_ACCEPTED_MAX = 0.60
 
 
-@dataclass(frozen=True)
+@dataclass
 class RewardEvent:
     index: int
     tool: str
