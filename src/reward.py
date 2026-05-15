@@ -552,7 +552,8 @@ def _compute_bad_pattern_penalty(
     add("too_many_public_tests", -min(0.08, 0.02 * max(0, len(public_events) - 5)))
     add("too_many_submits", -min(0.12, 0.04 * max(0, len(submit_events) - 2)))
 
-    if _accepted_then_tool_call(events) or trace.get("has_tool_call_after_submit_accepted"):
+    accepted_then_tool_call = _accepted_then_tool_call(events) or bool(trace.get("has_tool_call_after_submit_accepted"))
+    if accepted_then_tool_call:
         add("accepted_then_tool_call", -0.20)
     if _accepted_then_later_failed_submit(events):
         add("accepted_then_later_failed_submit", -0.30)
@@ -569,6 +570,11 @@ def _compute_bad_pattern_penalty(
         add("accepted_then_long_text", -0.05)
     elif accepted_text_chars > 500:
         add("accepted_then_long_text", -0.02)
+
+    empty_think_count = int(trace.get("empty_think_after_submit_accepted_count") or 0)
+    consecutive_empty_think = bool(trace.get("consecutive_empty_think_after_submit_accepted"))
+    if not accepted_then_tool_call and (consecutive_empty_think or empty_think_count >= 2):
+        add("empty_think_after_submit_accepted", -min(0.08, 0.02 * max(1, empty_think_count - 1)))
 
     total = _clamp(sum(penalties.values()), BAD_PATTERN_MIN, BAD_PATTERN_MAX)
     return total, penalties

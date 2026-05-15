@@ -104,6 +104,19 @@ def test_submit_accepted_does_not_mark_terminal():
     assert data.extra_fields["code_agent_trace"]["submission_count"] == 1
 
 
+def test_empty_think_after_submit_accepted_is_counted():
+    agent = _agent()
+    data = _agent_data()
+    trace = agent._trace(data)
+    trace["submit_accepted_seen"] = True
+
+    agent._record_post_accept_assistant_text(data, "<think>\n\n</think>\n<think>\n\n</think>")
+
+    trace = data.extra_fields["code_agent_trace"]
+    assert trace["empty_think_after_submit_accepted_count"] == 2
+    assert trace["consecutive_empty_think_after_submit_accepted"] is True
+
+
 def test_record_tool_event_stores_structured_reward_input():
     agent = _agent()
     data = _agent_data()
@@ -159,6 +172,7 @@ if __name__ == "__main__":
     test_public_limit_result_does_not_mark_terminal()
     test_public_test_accepted_does_not_mark_terminal()
     test_submit_accepted_does_not_mark_terminal()
+    test_empty_think_after_submit_accepted_is_counted()
     test_record_tool_event_stores_structured_reward_input()
     test_no_tool_call_marks_normal_terminal_reason()
     test_hard_cap_marks_terminal()

@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -39,6 +40,9 @@ _TERMINAL_REASON_KEY = "code_agent_terminal_reason"
 _PARSE_FAILURES_KEY = "code_agent_parse_failures"
 _TOOL_TAIL_CHARS_KEY = "code_agent_tool_tail_chars"
 _TOOL_EVENTS_KEY = "code_agent_tool_events"
+_EMPTY_THINK_RE = re.compile(r"<think>\s*</think>", re.IGNORECASE)
+_CONSECUTIVE_EMPTY_THINK_RE = re.compile(r"<think>\s*</think>\s*<think>\s*</think>", re.IGNORECASE)
+_POST_ACCEPT_TEXT_TAIL_KEY = "_assistant_after_submit_accepted_tail"
 
 
 @register("code_agent_tool_agent")
@@ -104,6 +108,8 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
                 "has_tool_call_after_submit_accepted": False,
                 "assistant_chars_after_submit_accepted": 0,
                 "assistant_tokens_after_submit_accepted": 0,
+                "empty_think_after_submit_accepted_count": 0,
+                "consecutive_empty_think_after_submit_accepted": False,
                 # rollout 级别的总 tool call guard，不等同于 submit 次数上限。
                 "max_tool_calls": self._max_tool_calls(agent_data),
                 # 工具调用 wall time 和 judge runtime，用来判断慢在模型还是环境。
@@ -117,6 +123,22 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             }
             agent_data.extra_fields[_TRACE_KEY] = trace
         return trace
+
+    def _record_post_accept_assistant_text(self, agent_data: AgentData, text: str) -> None:
+        """统计 submit AC 后的空 think 拖尾，供 reward 轻量惩罚。"""
+        if not text:
+            return
+        trace = self._trace(agent_data)
+        empty_count = len(_EMPTY_THINK_RE.findall(text))
+        if empty_count:
+            trace["empty_think_after_submit_accepted_count"] = int(
+                trace.get("empty_think_after_submit_accepted_count", 0)
+            ) + empty_count
+        previous_tail = str(trace.get(_POST_ACCEPT_TEXT_TAIL_KEY) or "")
+        combined = previous_tail + text
+        if _CONSECUTIVE_EMPTY_THINK_RE.search(combined):
+            trace["consecutive_empty_think_after_submit_accepted"] = True
+        trace[_POST_ACCEPT_TEXT_TAIL_KEY] = combined[-256:]
 
     def _create_kwargs(self, agent_data: AgentData, tool_name: str) -> dict[str, Any]:
         """读取某个工具的 create_kwargs。
@@ -405,6 +427,7 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             trace["assistant_tokens_after_submit_accepted"] = int(
                 trace.get("assistant_tokens_after_submit_accepted", 0)
             ) + len(agent_data.response_ids)
+            self._record_post_accept_assistant_text(agent_data, text)
         if state == AgentState.TERMINATED and agent_data.response_ids:
             tools = [tool.tool_schema for tool in self.tools.values()]
             _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)

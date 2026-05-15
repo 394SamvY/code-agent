@@ -246,6 +246,43 @@ def test_accepted_then_tool_and_long_text_penalties():
     assert bd["bad_patterns"]["accepted_then_long_text"] == -0.05
 
 
+def test_repeated_empty_think_after_accepted_submit_is_penalized():
+    result = _assert_score(
+        [_event("submit_solution", "accepted", 10, 10)],
+        1.0,
+        acc=1.0,
+        code_agent_trace={"empty_think_after_submit_accepted_count": 1},
+    )
+    assert "empty_think_after_submit_accepted" not in _breakdown(result)["bad_patterns"]
+
+    result = _assert_score(
+        [_event("submit_solution", "accepted", 10, 10)],
+        0.96,
+        acc=1.0,
+        code_agent_trace={"empty_think_after_submit_accepted_count": 3},
+    )
+    bd = _breakdown(result)
+    assert bd["bad_patterns"]["empty_think_after_submit_accepted"] == -0.04
+
+
+def test_empty_think_after_accepted_submit_is_not_double_counted_with_tool_call():
+    result = _assert_score(
+        [
+            _event("submit_solution", "accepted", 10, 10, code="print(1)"),
+            _event("run_public_tests", "accepted", 3, 3, code="print(1)"),
+        ],
+        0.8,
+        acc=1.0,
+        code_agent_trace={
+            "empty_think_after_submit_accepted_count": 3,
+            "consecutive_empty_think_after_submit_accepted": True,
+        },
+    )
+    bd = _breakdown(result)
+    assert bd["bad_patterns"]["accepted_then_tool_call"] == -0.2
+    assert "empty_think_after_submit_accepted" not in bd["bad_patterns"]
+
+
 def test_parse_failure_penalty_comes_from_trace():
     result = _assert_score(
         [_event("submit_solution", "accepted", 10, 10)],
@@ -270,4 +307,6 @@ if __name__ == "__main__":
     test_submit_debug_bonus_is_weak_and_capped()
     test_duplicate_and_tool_count_bad_patterns()
     test_accepted_then_tool_and_long_text_penalties()
+    test_repeated_empty_think_after_accepted_submit_is_penalized()
+    test_empty_think_after_accepted_submit_is_not_double_counted_with_tool_call()
     test_parse_failure_penalty_comes_from_trace()
