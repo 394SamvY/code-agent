@@ -13,7 +13,7 @@ defaults:
 # ═══════════════════════════════════════════════════
 
 data:
-  train_files: ./data/verl/codecontests_train.parquet
+  train_files: ./data/verl/codecontests_train_rated_3840.parquet
   val_files: ./data/verl/codecontests_valid.parquet
   # 每个外层 training step 取多少道原始题目。
   # 配合 rollout.n=4 时，每步生成 64 * 4 = 256 条 trajectory。

@@ -1,0 +1,170 @@
+# Agentic GRPO 训练配置 - Qwen3-8B on 2xA800-80G
+#
+# 继承 verl 的完整 ppo_trainer 默认配置，只覆盖需要修改的字段。
+# configs/verl/ 下的 symlinks 指向 verl 内置配置。
+# baseline eval 走 configs/verl/eval_qwen3_8b.yaml，不复用本训练配置。
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# ═══════════════════════════════════════════════════
+#  以下仅覆盖需要修改的字段，其余全部继承 ppo_trainer 默认值
+# ═══════════════════════════════════════════════════
+
+data:
+  train_files: ./data/verl/codecontests_train_rated_3840.parquet
+  val_files: ./data/verl/codecontests_valid.parquet
+  # 每个外层 training step 取多少道原始题目。
+  # 配合 rollout.n=4 时，每步生成 64 * 4 = 256 条 trajectory。
+  train_batch_size: 64
+  # validation dataloader batch size，不影响训练更新。
+  val_batch_size: 64
+  # 训练期间只评固定子集，不跑完整 valid 集。
+  val_max_samples: 128
+  # prompt token 预算；超长样本直接过滤，不截断。
+  max_prompt_length: 4096
+  # 整条 assistant trajectory 的总 token 预算，包含多轮工具交互。
+  max_response_length: 8192
+  filter_overlong_prompts: true
+  truncation: error
+  dataloader_num_workers: 2
+  # 固定 train/val 子采样，保证不同 run 可对比。
+  seed: 42
+  validation_shuffle: false
+  return_raw_chat: true
+  custom_cls:
+    path: src/verl_dataset_adapter.py
+    name: OJLikeRLHFDataset
+  apply_chat_template_kwargs:
+    # 和当前 baseline eval 的 prompt 行为保持一致。
+    enable_thinking: true
+
+actor_rollout_ref:
+  model:
+    # RL 从 OJ-like SFT checkpoint 起步，不从 base Qwen3-8B 起步。
+    path: /root/autodl-tmp/code-agent/outputs/verl_sft/qwen3_8b_oj_sft_20260505_032710/global_step_234/huggingface
+    enable_gradient_checkpointing: true
+
+  actor:
+    # prompt 级 PPO mini-batch size。verl 内部会先乘 rollout.n，
+    # 再按 trajectory mini-batch 切分。
+    # 当前 16 prompts => 64 trajectories；train_batch_size=64 时，
+    # 每个外层 step 会切成 4 个 PPO mini-batch，做 4 次 actor optimizer update。
+    ppo_mini_batch_size: 16
+    # 每张 GPU 的 actor forward/backward micro-batch。只控制显存；
+    # 梯度会累积到完整 PPO mini-batch 后再更新。
+    ppo_micro_batch_size_per_gpu: 1
+    # 同一批 rollout 数据重复训练几遍。
+    ppo_epochs: 3
+    # KL loss 把策略约束在 reference/SFT 模型附近，避免 GRPO 早期训歪。
+    use_kl_loss: true
+    kl_loss_coef: 0.01
+    kl_loss_type: low_var_kl
+    # 小 entropy bonus，用于保留早期探索。
+    entropy_coeff: 0.001
+    # 满长 response 下 entropy 的 logits/softmax 临时张量很大；
+    # 分块计算并在 backward 重算，优先降低 actor update 峰值显存。
+    entropy_checkpointing: true
+    entropy_from_logits_with_chunking: true
+    clip_ratio: 0.2
+    grad_clip: 1.0
+    use_torch_compile: false
+    checkpoint:
+      # 只保存可直接加载的 HuggingFace 模型，不保存 FSDP model shard、
+      # optimizer 或 extra state。这样产物更小，但不能用该 checkpoint
+      # 直接恢复训练状态；需要继续训练时从 huggingface/ 目录作为 model.path 重新启动。
+      save_contents:
+        - hf_model
+      load_contents: []
+    fsdp_config:
+      param_offload: true
+      optimizer_offload: true
+      model_dtype: bf16
+    optim:
+      lr: 5.0e-6
+      weight_decay: 0.01
+
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    use_torch_compile: false
+    fsdp_config:
+      # reference model 只在 rollout 后计算 KL/logprob，空闲期间可 offload 到 CPU。
+      param_offload: true
+      model_dtype: bf16
+
+  rollout:
+    name: sglang
+    # SGLang KV-cache 显存比例。训练 rollout 采样阶段相对独立，
+    # 复用 baseline eval 已验证的高吞吐参数；ref 已开启 param offload。
+    gpu_memory_utilization: 0.88
+    tensor_model_parallel_size: 1
+    # 训练 rollout 使用采样；validation 使用下面的 val_kwargs。
+    temperature: 0.9
+    top_p: 0.95
+    # RL rollout 的 response budget，需和 data.max_response_length 对齐。
+    response_length: 8192
+    # prompt + response 的总上下文容量。
+    max_model_len: 12288
+    # SGLang 吞吐和资源保护参数。
+    max_num_batched_tokens: 32768
+    max_num_seqs: 64
+    enforce_eager: true
+    log_prob_micro_batch_size_per_gpu: 1
+    # GRPO group size：每道题采样 4 条回答，并在同一个 prompt uid 组内
+    # 做 advantage 归一化。
+    n: 4
+    # validation 固定为 greedy 单采样，不使用训练的 rollout.n=4。
+    val_kwargs:
+      n: 1
+      temperature: 0
+      top_p: 0.95
+      top_k: 20
+      do_sample: false
+    agent:
+      # 多轮工具 rollout 的异步 agent loop worker 数。
+      # eval C2/full eval 中 64 workers 相比 32 workers 有明显吞吐收益。
+      num_workers: 64
+      default_agent_loop: code_agent_tool_agent
+      agent_loop_config_path: configs/verl/code_agent_loop.yaml
+    multi_turn:
+      enable: true
+      tool_config_path: configs/verl/tool_config.yaml
+      tokenization_sanity_check_mode: ignore_strippable
+
+reward:
+  # 从生成轨迹里提取 custom reward 的并行 worker 数。
+  num_workers: 4
+  custom_reward_function:
+    # Use package import so dataclasses can resolve sys.modules during verl's dynamic load.
+    path: pkg://src/reward
+    name: compute_score
+
+algorithm:
+  # Group Relative Policy Optimization，需要 rollout.n > 1。
+  adv_estimator: grpo
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 2
+  # 外层 training step 数。每步包含 rollout、reward、advantage、actor update
+  # 和 rollout 权重同步。
+  total_training_steps: 5
+  # 避免首次更新前先跑一次较慢的 validation。
+  val_before_train: true
+  # 当前只保存 hf_model，不保存 optimizer/extra/FSDP shard，因此禁用自动 resume，
+  # 避免误从只有 HF 权重的 checkpoint 里恢复训练状态。
+  resume_mode: disable
+  save_freq: 5
+  # 10-step 计时实验先不跑 validation，避免验证耗时污染每步训练耗时估计。
+  test_freq: 5
+  max_actor_ckpt_to_keep: 1
+  project_name: code-agent-grpo
+  experiment_name: qwen3-8b-sft-grpo-stage1
+  logger:
+    - console
+    - tensorboard
+  default_local_dir: ./outputs/verl_grpo/checkpoints
+  rollout_data_dir: ./outputs/verl_grpo/rollout_data
+  validation_data_dir: ./outputs/verl_grpo/validation_generations
+  log_val_generations: 1
