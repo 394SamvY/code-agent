@@ -144,6 +144,22 @@ def test_record_tool_event_stores_structured_reward_input():
     assert events[0]["pass_rate"] == 1.0
 
 
+def test_parse_error_event_is_recorded_for_reward():
+    agent = _agent()
+    data = _agent_data()
+    agent._trace(data)["parse_failures"] = 1
+
+    observation = agent._parse_error_observation(data)
+    agent._record_parse_error_event(data, observation)
+
+    events = data.extra_fields["code_agent_tool_events"]
+    assert len(events) == 1
+    assert events[0]["tool"] == "malformed_tool_call"
+    assert events[0]["verdict"] == "tool_parse_error"
+    assert events[0]["error_kind"] == "malformed_tool_call"
+    assert "invalid <tool_call> format" in events[0]["observation"]
+
+
 def test_no_tool_call_marks_normal_terminal_reason():
     agent = _agent()
     data = _agent_data()
@@ -174,6 +190,7 @@ if __name__ == "__main__":
     test_submit_accepted_does_not_mark_terminal()
     test_empty_think_after_submit_accepted_is_counted()
     test_record_tool_event_stores_structured_reward_input()
+    test_parse_error_event_is_recorded_for_reward()
     test_no_tool_call_marks_normal_terminal_reason()
     test_hard_cap_marks_terminal()
     print("\nAll tests passed!")

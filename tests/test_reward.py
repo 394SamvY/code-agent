@@ -55,11 +55,11 @@ def test_compute_score_requires_structured_events():
 def test_outcome_reward_uses_last_submit_by_default():
     result = _assert_score(
         [_event("submit_solution", "wrong_answer", 8, 10)],
-        0.32,
+        -0.04,
         acc=0.0,
     )
     bd = _breakdown(result)
-    assert bd["outcome_reward"] == 0.32
+    assert bd["outcome_reward"] == -0.04
     assert bd["outcome_verdict"] == "wrong_answer"
 
     result = _assert_score(
@@ -67,7 +67,7 @@ def test_outcome_reward_uses_last_submit_by_default():
             _event("submit_solution", "accepted", 10, 10, code="print(1)"),
             _event("submit_solution", "wrong_answer", 4, 10, code="print(2)"),
         ],
-        -0.24,
+        -0.5,
         acc=0.0,
     )
     bd = _breakdown(result)
@@ -94,98 +94,46 @@ def test_any_ac_else_best_policy_is_available_but_acc_stays_last_submit():
     )
     bd = _breakdown(result)
     assert bd["outcome_reward"] == 1.0
-    assert bd["bad_patterns"]["accepted_then_later_failed_submit"] == -0.3
+    assert bd["bad_patterns"]["accepted_then_later_failed_submit"] == -0.25
 
 
 def test_no_submit_bad_pattern_penalty():
-    _assert_score([], -0.3, acc=0.0)
-    _assert_score([_event("run_public_tests", "accepted", 3, 3)], -0.4, acc=0.0)
+    _assert_score([], -0.25, acc=0.0)
+    _assert_score([_event("run_public_tests", "accepted", 3, 3)], -0.35, acc=0.0)
 
 
 def test_response_truncated_bad_pattern_penalty():
     result = _assert_score(
         [_event("submit_solution", "accepted", 10, 10)],
-        0.8,
+        0.85,
         acc=1.0,
         code_agent_trace={"terminal_reason": "response_length_exceeded"},
     )
     bd = _breakdown(result)
-    assert bd["bad_patterns"]["response_truncated"] == -0.2
+    assert bd["bad_patterns"]["response_truncated"] == -0.15
 
     result = _assert_score(
         [],
-        -0.4,
+        -0.45,
         acc=0.0,
         code_agent_trace={"terminal_reason": "response_length_exceeded"},
     )
     bd = _breakdown(result)
-    assert bd["bad_pattern"] == -0.4
-    assert bd["bad_patterns"]["no_submit"] == -0.3
-    assert bd["bad_patterns"]["response_truncated"] == -0.2
-    assert bd["bad_patterns"]["truncated_no_submit"] == -0.1
+    assert bd["bad_pattern"] == -0.45
+    assert bd["bad_patterns"]["no_submit"] == -0.25
+    assert bd["bad_patterns"]["response_truncated"] == -0.15
+    assert bd["bad_patterns"]["truncated_no_submit"] == -0.05
 
 
-def test_debug_prm_rewards_feedback_conditioned_improvement():
-    old = "a=[]\nprint(a[0])"
-    new = "a=[]\nif len(a) > 0:\n    print(a[0])\nelse:\n    print(0)"
-    events = [
-        _event(
-            "run_public_tests",
-            "runtime_error",
-            0,
-            2,
-            code=old,
-            first_failed={"stderr": "IndexError: list index out of range"},
-            error_kind="index_error",
-        ),
-        _event("run_public_tests", "wrong_answer", 1, 2, code=new),
-        _event("submit_solution", "wrong_answer", 0, 10, code=new),
-    ]
-    result = _assert_score(events, -0.055, acc=0.0)
-    signals = _breakdown(result)["debug_signals"]
-    assert signals["state_rank_improved"] == 0.015
-    assert "pass_rate_improved" not in signals
-    assert signals["feedback_aligned_not_worse"] == 0.03
-
-
-def test_weak_wrong_answer_logic_change_bonus_is_small():
-    events = [
-        _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
-        _event("run_public_tests", "wrong_answer", 1, 2, code="print(1)"),
-        _event("submit_solution", "wrong_answer", 0, 10, code="print(1)"),
-    ]
-    result = _assert_score(events, -0.08, acc=0.0)
-    bd = _breakdown(result)
-    assert bd["debug_prm"] == 0.02
-    assert bd["debug_signals"]["pass_rate_improved"] == 0.015
-    assert bd["debug_signals"]["wrong_answer_logic_changed_not_worse"] == 0.005
-
-
-def test_debug_prm_progress_only_counts_new_best_state():
-    events = [
-        _event("run_public_tests", "syntax_error", 0, 2, code="print("),
-        _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
-        _event("run_public_tests", "syntax_error", 0, 2, code="print("),
-        _event("run_public_tests", "wrong_answer", 0, 2, code="print(1)"),
-        _event("submit_solution", "wrong_answer", 0, 10, code="print(1)"),
-    ]
-    result = _score(events)
-    bd = _breakdown(result)
-    assert bd["debug_signals"]["state_rank_improved"] == 0.03
-    assert "wrong_answer_logic_changed_not_worse" not in bd["debug_signals"]
-    assert bd["debug_prm"] == 0.03
-
-
-def test_no_submit_caps_positive_debug_prm_to_zero():
+def test_no_submit_with_public_accepted_is_strongly_penalized():
     events = [
         _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
         _event("run_public_tests", "accepted", 2, 2, code="print(1)"),
     ]
-    result = _assert_score(events, -0.4, acc=0.0)
+    result = _assert_score(events, -0.35, acc=0.0)
     bd = _breakdown(result)
-    assert bd["debug_prm"] == 0.0
-    assert bd["bad_patterns"]["no_submit"] == -0.3
-    assert bd["bad_patterns"]["public_acc_no_submit"] == -0.2
+    assert bd["bad_patterns"]["no_submit"] == -0.25
+    assert bd["bad_patterns"]["public_acc_no_submit"] == -0.1
 
 
 def test_public_to_submit_does_not_get_debug_bonus():
@@ -195,25 +143,22 @@ def test_public_to_submit_does_not_get_debug_bonus():
             _event("run_public_tests", "wrong_answer", 0, 2, code=code),
             _event("submit_solution", "wrong_answer", 0, 10, code=code),
         ],
-        -0.1,
+        -0.26,
         acc=0.0,
     )
     bd = _breakdown(result)
-    assert bd["debug_prm"] == 0.0
-    assert bd["debug_signals"] == {}
-    assert bd["bad_patterns"]["public_fail_same_code_submit"] == -0.1
+    assert bd["bad_patterns"]["public_fail_same_code_submit"] == -0.06
 
 
-def test_submit_debug_bonus_is_weak_and_capped():
+def test_accepted_with_too_many_submits_is_penalized():
     events = [
         _event("submit_solution", "wrong_answer", 1, 10, code="print(0)"),
         _event("submit_solution", "wrong_answer", 8, 10, code="print(1)"),
         _event("submit_solution", "accepted", 10, 10, code="print(2)"),
     ]
-    result = _assert_score(events, 0.9738, acc=1.0)
+    result = _assert_score(events, 0.97, acc=1.0)
     bd = _breakdown(result)
-    assert bd["debug_prm"] <= 0.03
-    assert bd["bad_patterns"]["too_many_submits"] == -0.04
+    assert bd["bad_patterns"]["too_many_submits"] == -0.03
 
 
 def test_duplicate_and_tool_count_bad_patterns():
@@ -224,11 +169,11 @@ def test_duplicate_and_tool_count_bad_patterns():
     ]
     result = _assert_score(events, -0.5, acc=0.0)
     bd = _breakdown(result)
-    assert bd["bad_pattern"] == -0.4
-    assert bd["bad_patterns"]["duplicate_public_code"] == -0.1
-    assert bd["bad_patterns"]["duplicate_submit_code"] == -0.15
-    assert bd["bad_patterns"]["too_many_public_tests"] == -0.04
-    assert bd["bad_patterns"]["too_many_submits"] == -0.08
+    assert bd["bad_pattern"] == -0.47
+    assert bd["bad_patterns"]["duplicate_public_code"] == -0.08
+    assert bd["bad_patterns"]["duplicate_submit_code"] == -0.09
+    assert bd["bad_patterns"]["too_many_public_tests"] == -0.02
+    assert bd["bad_patterns"]["too_many_submits"] == -0.06
 
 
 def test_accepted_then_tool_and_long_text_penalties():
@@ -237,12 +182,12 @@ def test_accepted_then_tool_and_long_text_penalties():
             _event("submit_solution", "accepted", 10, 10, code="print(1)"),
             _event("run_public_tests", "accepted", 3, 3, code="print(1)"),
         ],
-        0.75,
+        0.8,
         acc=1.0,
         code_agent_trace={"assistant_chars_after_submit_accepted": 1601},
     )
     bd = _breakdown(result)
-    assert bd["bad_patterns"]["accepted_then_tool_call"] == -0.2
+    assert bd["bad_patterns"]["accepted_then_tool_call"] == -0.15
     assert bd["bad_patterns"]["accepted_then_long_text"] == -0.05
 
 
@@ -271,7 +216,7 @@ def test_empty_think_after_accepted_submit_is_not_double_counted_with_tool_call(
             _event("submit_solution", "accepted", 10, 10, code="print(1)"),
             _event("run_public_tests", "accepted", 3, 3, code="print(1)"),
         ],
-        0.8,
+        0.85,
         acc=1.0,
         code_agent_trace={
             "empty_think_after_submit_accepted_count": 3,
@@ -279,18 +224,63 @@ def test_empty_think_after_accepted_submit_is_not_double_counted_with_tool_call(
         },
     )
     bd = _breakdown(result)
-    assert bd["bad_patterns"]["accepted_then_tool_call"] == -0.2
+    assert bd["bad_patterns"]["accepted_then_tool_call"] == -0.15
     assert "empty_think_after_submit_accepted" not in bd["bad_patterns"]
 
 
 def test_parse_failure_penalty_comes_from_trace():
     result = _assert_score(
         [_event("submit_solution", "accepted", 10, 10)],
-        0.9,
+        0.7,
         acc=1.0,
         code_agent_trace={"parse_failures": 2},
     )
-    assert _breakdown(result)["bad_patterns"]["malformed_tool_call"] == -0.1
+    assert _breakdown(result)["bad_patterns"]["malformed_tool_call"] == -0.3
+
+
+def test_malformed_non_accepted_is_hard_failure_even_with_partial_submit():
+    result = _assert_score(
+        [
+            _event("run_public_tests", "accepted", 2, 2, code="print(1)"),
+            _event("submit_solution", "wrong_answer", 7, 10, code="print(1)"),
+            _event(
+                "malformed_tool_call",
+                "tool_parse_error",
+                0,
+                0,
+                code=None,
+                error_kind="malformed_tool_call",
+            ),
+        ],
+        -0.3,
+        acc=0.0,
+    )
+    bd = _breakdown(result)
+    assert bd["outcome_reward"] == -0.06
+    assert bd["bad_patterns"]["malformed_tool_call"] == -0.15
+
+
+def test_unknown_tool_is_recorded_and_penalized():
+    result = _assert_score(
+        [
+            _event("run_public_tests", "wrong_answer", 0, 2, code="print(0)"),
+            _event(
+                "clear",
+                "tool_execution_error",
+                0,
+                0,
+                code=None,
+                observation="Error when executing tool: 'clear'",
+                error_kind="tool_execution_error",
+            ),
+        ],
+        -0.45,
+        acc=0.0,
+    )
+    bd = _breakdown(result)
+    assert bd["event_count"] == 2
+    assert bd["bad_patterns"]["unknown_tool"] == -0.2
+    assert "tool_execution_error" not in bd["bad_patterns"]
 
 
 if __name__ == "__main__":
@@ -299,14 +289,13 @@ if __name__ == "__main__":
     test_any_ac_else_best_policy_is_available_but_acc_stays_last_submit()
     test_no_submit_bad_pattern_penalty()
     test_response_truncated_bad_pattern_penalty()
-    test_debug_prm_rewards_feedback_conditioned_improvement()
-    test_weak_wrong_answer_logic_change_bonus_is_small()
-    test_debug_prm_progress_only_counts_new_best_state()
-    test_no_submit_caps_positive_debug_prm_to_zero()
+    test_no_submit_with_public_accepted_is_strongly_penalized()
     test_public_to_submit_does_not_get_debug_bonus()
-    test_submit_debug_bonus_is_weak_and_capped()
+    test_accepted_with_too_many_submits_is_penalized()
     test_duplicate_and_tool_count_bad_patterns()
     test_accepted_then_tool_and_long_text_penalties()
     test_repeated_empty_think_after_accepted_submit_is_penalized()
     test_empty_think_after_accepted_submit_is_not_double_counted_with_tool_call()
     test_parse_failure_penalty_comes_from_trace()
+    test_malformed_non_accepted_is_hard_failure_even_with_partial_submit()
+    test_unknown_tool_is_recorded_and_penalized()

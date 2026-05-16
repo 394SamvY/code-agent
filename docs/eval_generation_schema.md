@@ -138,9 +138,8 @@
     "last_submit_pass_rate": 1.0,
     "reward": 1.0,
     "outcome_reward": 1.0,
-    "debug_prm": 0.0,
     "bad_pattern": 0.0,
-    "reward_breakdown": "{\"reward_formula\":\"outcome + debug_prm + bad_pattern\",...}"
+    "reward_breakdown": "{\"reward_formula\":\"outcome + bad_pattern\",...}"
   },
   "verl": {
     "step": 0,
@@ -246,11 +245,10 @@ no_submission
 | `acc_any` | trajectory 中任意一次 submit accepted 即为 `1.0`。 |
 | `best_submit_pass_rate` | 所有 submit 中最佳 pass rate。 |
 | `last_submit_pass_rate` | 最后一次 submit 的 pass rate。 |
-| `reward` | 训练优化目标，当前为 `R_outcome + R_debug_prm + R_bad_pattern`。 |
+| `reward` | 训练优化目标，当前为 `R_outcome + R_bad_pattern`。 |
 | `outcome_reward` | 最终正确性主奖励。 |
-| `debug_prm` | 反馈条件下 debug 过程奖励。 |
 | `bad_pattern` | 已知坏模式惩罚。 |
-| `reward_breakdown` | JSON 字符串，记录 reward 三项来源、submit 诊断和具体信号。 |
+| `reward_breakdown` | JSON 字符串，记录 reward 来源、submit 诊断和具体坏模式。 |
 
 ### `verl`
 

@@ -214,7 +214,7 @@ terminal / tool 分布：
 - 当前主要瓶颈仍是单题 assistant 输出过长，不是 tool observation 或 judge。`tool_wall_time=517.8s` 只占 ready-to-end 的约 10.9%，主耗时是 SGLang decode。
 - 最大 token 来源是 `no_tool_call` 长输出，尤其 `num_tool_calls=0` 的 54 条，平均接近打满 `MAX_RESPONSE_LENGTH=28672`。这说明模型经常长时间思考但没有进入工具调用。
 - `tool_call_limit_exhausted` 不是最大 token 来源，但暴露出 accepted 后继续调用工具的行为问题。当前 reward 只消费 agent loop 记录的结构化 `code_agent_tool_events`；`acc_final` 按最后一次 `submit_solution` 计算，`acc_any` 记录任意一次正式提交 AC。历史 A3 运行早于这些额外诊断字段，因此这里只能把 `acc` 当作 last-submit 口径解读。
-- 这符合后续 RL 可优化方向：通过 `R_debug_prm` 奖励有效修复，通过 `R_bad_pattern` 惩罚 accepted 后继续工具调用、无工具长思考、撞工具上限等行为。
+- 这符合后续 RL 可优化方向：保留客观 judge outcome，并通过 `R_bad_pattern` 惩罚 accepted 后继续工具调用、无工具长思考、撞工具上限等行为。
 
 按 A3 结果外推：
 

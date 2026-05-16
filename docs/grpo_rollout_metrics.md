@@ -58,7 +58,7 @@ grad_norm 没有尖峰
 这些指标按一个 `global_step` 的 256 条 rollout 聚合。每条 rollout 的当前 reward 为：
 
 ```text
-R = R_outcome + R_debug_prm + R_bad_pattern
+R = R_outcome + R_bad_pattern
 ```
 
 从每条 rollout 的 `score` / `reward` 和 `reward_breakdown` 读取：
@@ -68,9 +68,6 @@ R = R_outcome + R_debug_prm + R_bad_pattern
 | `reward_mean` | 最终 reward 平均值 | 256 rollouts |
 | `reward_std` | 最终 reward 标准差 | 256 rollouts |
 | `outcome_reward_mean` | `R_outcome` 平均值 | 256 rollouts |
-| `debug_prm_mean` | `R_debug_prm` 平均值 | 256 rollouts |
-| `debug_prm_pos_rate` | `debug_prm > 0` 的轨迹比例 | 256 rollouts |
-| `debug_prm_neg_rate` | `debug_prm < 0` 的轨迹比例 | 256 rollouts |
 | `bad_pattern_mean` | `R_bad_pattern` 平均值 | 256 rollouts |
 | `bad_pattern_nonzero_rate` | 有坏模式惩罚的轨迹比例 | 256 rollouts |
 
@@ -79,7 +76,6 @@ R = R_outcome + R_debug_prm + R_bad_pattern
 ```text
 outcome_reward_mean 上升：好
 bad_pattern_mean 接近 0：坏行为减少
-debug_prm_mean 持续升但 outcome 不升：可能在刷过程分
 reward_std 太低：GRPO 组内差异不足
 ```
 
@@ -181,8 +177,8 @@ accepted_then_later_failed_rate
 旧 run 里 `no_submit_rate` 和 `response_length/clip_ratio` 都偏高，因此新版 reward 已加入：
 
 ```text
-response_truncated: -0.20
-truncated_no_submit: -0.10
+response_truncated: -0.15
+truncated_no_submit: -0.05
 ```
 
 ## Bad Pattern Top-K
@@ -191,8 +187,8 @@ truncated_no_submit: -0.10
 
 ```json
 {
-  "no_submit": -0.3,
-  "response_truncated": -0.2
+  "no_submit": -0.25,
+  "response_truncated": -0.15
 }
 ```
 
@@ -218,6 +214,8 @@ bad_pattern_mean_contribution = sum / 256
 | `too_many_submits` | submit 过多 |
 | `duplicate_submit_code` | 重复提交相同代码 |
 | `malformed_tool_call` | 工具调用格式错误 |
+| `unknown_tool` | 调用了 schema 外工具 |
+| `tool_execution_error` | 工具 adapter 执行失败 |
 
 这个表能直接说明坏行为主要来自哪里。比如 `bad_pattern_mean` 变差时，要用 top-k 判断是 `response_truncated` 增多，还是 submit probing / duplicate submit 增多。
 
@@ -241,9 +239,6 @@ pg_loss_mean
 reward_mean
 reward_std
 outcome_reward_mean
-debug_prm_mean
-debug_prm_pos_rate
-debug_prm_neg_rate
 bad_pattern_mean
 bad_pattern_nonzero_rate
 
@@ -303,7 +298,6 @@ clipfrac 经常 > 0.4
 KL 快速上升
 entropy 快速下降
 train reward 涨但 held-out eval 下降
-debug_prm_mean 快速上升但 outcome_reward_mean 不升
 bad_pattern_mean 变得更负
 response_truncated_rate 或 no_submit_rate 上升
 ```

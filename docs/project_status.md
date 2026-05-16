@@ -64,7 +64,7 @@ ROLLOUT_TP=1
 - `MAX_RESPONSE_LENGTH=8192` 是当前默认预算。它显著减少无效长思考，并在固定 128 条对比中保持和 28672 budget 相同的 accepted 数；但 `response_cap_hit` 仍高，说明模型行为还没有真正学会主动短路径。
 - `VAL_BATCH_SIZE=64`、`AGENT_WORKERS=64`、`MAX_NUM_SEQS=64`、`GPU_MEMORY_UTILIZATION=0.88` 是当前稳定高吞吐配置。更激进的 `mem0.95` / 高并发尝试没有证明收益，且存在线程资源风险。
 - 模型已经能产生 tool call；此前“tool-call rate = 0%”是因为脚本缺少 `actor_rollout_ref.rollout.agent.default_agent_loop=code_agent_tool_agent`，误走了 verl 默认 single-turn agent。
-- 当前 reward 只消费 agent loop 记录的结构化 `code_agent_tool_events`，不再解析 `solution_str`。`acc` / `acc_final` 按最后一次 `submit_solution` 事件计算，不是 `max(tool_rewards)`；如果 AC 后又 submit 失败，则 `acc_final=0`。`acc_any`、`best_submit_pass_rate` 和 `last_submit_pass_rate` 会写入 `reward_breakdown`，用于区分“不会解题”和“会解题但不会停止”。RL 训练阶段继续通过 `R_debug_prm` 和 `R_bad_pattern` 约束有效 debug、accepted 后停止、无工具长思考和撞工具上限。
+- 当前 reward 只消费 agent loop 记录的结构化 `code_agent_tool_events`，不再解析 `solution_str`。`acc` / `acc_final` 按最后一次 `submit_solution` 事件计算，不是 `max(tool_rewards)`；如果 AC 后又 submit 失败，则 `acc_final=0`。`acc_any`、`best_submit_pass_rate` 和 `last_submit_pass_rate` 会写入 `reward_breakdown`，用于区分“不会解题”和“会解题但不会停止”。RL 训练 reward 只保留 judge outcome 和协议坏模式惩罚，避免过程启发式奖励被 hacking。
 
 ## GRPO 训练配置
 
@@ -142,4 +142,4 @@ max_memory_reserved: 76.36GB
 
 1. 用当前配置继续长跑完整训练集，同时监控显存、step time、rollout length 和 tool 行为。
 2. 长跑稳定后恢复小样本 validation，例如 `val_max_samples=128`、`test_freq` 按阶段设置，并评估训练后 checkpoint。
-3. 长跑时重点监控 `acc_any - acc_final`、accepted 后继续工具调用、response cap hit、`debug_prm_mean` 和 `bad_pattern_mean`，再决定是否调整 reward 权重。
+3. 长跑时重点监控 `acc_any - acc_final`、accepted 后继续工具调用、malformed / unknown tool、response cap hit 和 `bad_pattern_mean`，再决定是否调整 reward 权重。

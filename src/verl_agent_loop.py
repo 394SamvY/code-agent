@@ -40,6 +40,8 @@ _TERMINAL_REASON_KEY = "code_agent_terminal_reason"
 _PARSE_FAILURES_KEY = "code_agent_parse_failures"
 _TOOL_TAIL_CHARS_KEY = "code_agent_tool_tail_chars"
 _TOOL_EVENTS_KEY = "code_agent_tool_events"
+_PARSE_ERROR_TOOL_NAME = "malformed_tool_call"
+_PARSE_ERROR_VERDICT = "tool_parse_error"
 _EMPTY_THINK_RE = re.compile(r"<think>\s*</think>", re.IGNORECASE)
 _CONSECUTIVE_EMPTY_THINK_RE = re.compile(r"<think>\s*</think>\s*<think>\s*</think>", re.IGNORECASE)
 _POST_ACCEPT_TEXT_TAIL_KEY = "_assistant_after_submit_accepted_tail"
@@ -90,6 +92,9 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
                 "num_tool_calls": 0,
                 # 模型输出里疑似包含 <tool_call>，但 parser 没能解析成合法 tool call 的次数。
                 "parse_failures": 0,
+                # parse error observation 的返回次数；超过上限后才把 episode 终止。
+                "parse_error_observation_count": 0,
+                "max_parse_error_retries": self._max_parse_error_retries(),
                 # 本 loop 归一化后的停止原因，写入 generation schema 的 stop_reason。
                 "terminal_reason": None,
                 # 最近一次工具动作和最近一次 judge verdict，便于快速看最后状态。
@@ -192,6 +197,20 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         # limit-exceeded observation 之前把 trajectory 截断。
         return max_public + max_submissions + 2
 
+    def _max_parse_error_retries(self) -> int:
+        """Malformed tool call 的可恢复重试次数。
+
+        默认给 1 次格式纠错机会：模型会看到一条 tool observation，然后继续生成。
+        设为 0 时保持旧行为，第一次 malformed 就终止。
+        """
+        env_value = os.getenv("CODE_AGENT_MAX_PARSE_ERROR_RETRIES")
+        if env_value is None:
+            return 1
+        try:
+            return max(0, int(env_value))
+        except ValueError:
+            return 1
+
     def _mark_terminal(self, agent_data: AgentData, reason: str) -> None:
         """把当前 trajectory 标记为终止，并同步写入 trace / extra_fields。
 
@@ -247,8 +266,9 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
 
         上游 parser 只有解析成功时才会填充 ``agent_data.tool_calls``。这里额外检查
         原始 token 文本里是否出现 ``<tool_call>`` 标记：如果有标记但没有合法 tool
-        call，说明模型大概率输出了畸形工具调用。记录 parse failure 后，上层会把
-        terminal_reason 标成 ``malformed_tool_call``。
+        call，说明模型大概率输出了畸形工具调用。记录 parse failure 后，上层会先
+        返回一条格式错误 observation；超过重试上限后才把 terminal_reason 标成
+        ``malformed_tool_call``。
         """
         if agent_data.tool_calls:
             return False
@@ -263,6 +283,61 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         agent_data.extra_fields[_PARSE_FAILURES_KEY] = trace["parse_failures"]
         agent_data.extra_fields[_TOOL_TAIL_CHARS_KEY] = trace["tool_tail_chars"]
         return True
+
+    def _parse_error_observation(self, agent_data: AgentData) -> str:
+        trace = self._trace(agent_data)
+        count = int(trace.get("parse_failures", 0))
+        max_retries = int(trace.get("max_parse_error_retries", self._max_parse_error_retries()))
+        return (
+            f"{_PARSE_ERROR_VERDICT}: invalid <tool_call> format "
+            f"({count}/{max_retries} retry observations used). "
+            "Return exactly one valid JSON object inside <tool_call></tool_call>. "
+            'Use one of: {"name":"run_public_tests","arguments":{"code":"..."}}, '
+            'or {"name":"submit_solution","arguments":{"code":"..."}}. '
+            "Do not call other tool names, omit arguments, or output malformed JSON."
+        )
+
+    def _record_parse_error_event(self, agent_data: AgentData, observation: str) -> None:
+        self._ensure_extra_fields(agent_data)
+        event = {
+            "index": len(agent_data.extra_fields[_TOOL_EVENTS_KEY]),
+            "tool": _PARSE_ERROR_TOOL_NAME,
+            "verdict": _PARSE_ERROR_VERDICT,
+            "passed": 0,
+            "total": 0,
+            "pass_rate": 0.0,
+            "code": None,
+            "code_hash": None,
+            "observation": observation,
+            "first_failed": None,
+            "tool_reward": 0.0,
+            "error_kind": _PARSE_ERROR_TOOL_NAME,
+        }
+        agent_data.extra_fields[_TOOL_EVENTS_KEY].append(event)
+
+    async def _append_parse_error_observation(self, agent_data: AgentData) -> AgentState:
+        """把 malformed tool call 转成可学习的 tool observation 并继续生成。"""
+        trace = self._trace(agent_data)
+        trace["parse_error_observation_count"] = int(trace.get("parse_error_observation_count", 0)) + 1
+        observation = self._parse_error_observation(agent_data)
+        self._record_parse_error_event(agent_data, observation)
+
+        add_messages = [{"role": "tool", "content": observation}]
+        agent_data.messages.extend(add_messages)
+        response_ids = await self.apply_chat_template(
+            add_messages,
+            remove_system_prompt=True,
+        )
+        if len(agent_data.response_mask) + len(response_ids) >= self.response_length:
+            self._mark_terminal(agent_data, "response_length_exceeded")
+            return AgentState.TERMINATED
+
+        agent_data.prompt_ids += response_ids
+        agent_data.response_mask += [0] * len(response_ids)
+        if agent_data.response_logprobs:
+            agent_data.response_logprobs += [0.0] * len(response_ids)
+        agent_data.user_turns += 1
+        return AgentState.GENERATING
 
     def _tool_call_arguments(self, tool_call) -> dict[str, Any]:
         """Decode the model-generated tool arguments for structured reward events."""
@@ -287,13 +362,15 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
         stderr = str(first_failed.get("stderr") or observation or "")
         if "IndexError" in stderr or "index out of range" in stderr:
             return "index_error"
+        if "Error when executing tool" in stderr:
+            return "tool_execution_error"
         if "KeyError" in stderr:
             return "key_error"
         if "RecursionError" in stderr or "maximum recursion depth exceeded" in stderr:
             return "recursion_error"
         if verdict == "time_limit_exceeded" or "Time Limit Exceeded" in stderr or "TLE" in stderr:
             return "time_limit_exceeded"
-        if verdict in {"syntax_error", "runtime_error", "wrong_answer"}:
+        if verdict in {"syntax_error", "runtime_error", "wrong_answer", "tool_execution_error"}:
             return verdict
         return verdict or None
 
@@ -436,6 +513,13 @@ class CodeAgentToolAgentLoop(ToolAgentLoop):
             if len(agent_data.response_mask) >= self.response_length:
                 self._mark_terminal(agent_data, "response_length_exceeded")
             elif parse_failed:
+                trace = self._trace(agent_data)
+                if int(trace.get("parse_error_observation_count", 0)) < int(
+                    trace.get("max_parse_error_retries", self._max_parse_error_retries())
+                ):
+                    return await self._append_parse_error_observation(agent_data)
+                observation = self._parse_error_observation(agent_data)
+                self._record_parse_error_event(agent_data, observation)
                 self._mark_terminal(agent_data, "malformed_tool_call")
             else:
                 self._record_no_tool_call_termination(agent_data)

@@ -226,7 +226,6 @@ def _generation_record(
             "outcome_submit_policy": str(
                 _value_at(reward_extra_infos.get("outcome_submit_policy"), index, "last_submit")
             ),
-            "debug_prm": _float_at(reward_extra_infos.get("debug_prm"), index, 0.0),
             "bad_pattern": _float_at(reward_extra_infos.get("bad_pattern"), index, 0.0),
             "reward_breakdown": _value_at(reward_extra_infos.get("reward_breakdown"), index, ""),
         },
