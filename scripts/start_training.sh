@@ -4,8 +4,8 @@
 # ============================================================================
 #
 # 用法:
-#   bash scripts/start_training.sh                    # 默认 2 GPU + Dr.GRPO
-#   bash scripts/start_training.sh 4                  # 4 GPU + Dr.GRPO
+#   bash scripts/start_training.sh                    # 默认 2 GPU + GSPO
+#   bash scripts/start_training.sh 4                  # 4 GPU + GSPO
 #   bash scripts/start_training.sh 2 grpo_qwen3_8b    # 指定配置名
 #
 # 会自动:
@@ -14,7 +14,7 @@
 #   3. 训练结束后自动停止 GPU 监控
 #
 # 训练结束后你能得到:
-#   outputs/verl_drgrpo/
+#   outputs/verl_gspo/
 #   ├── gpu_monitor.csv          # GPU 显存/利用率时间序列
 #   ├── train.log                # 完整训练日志（含 DEBUG 显存变化）
 #   ├── rollout_data/            # 每步模型生成内容 (JSONL)
@@ -27,8 +27,8 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 NUM_GPUS=${1:-2}
-CONFIG_NAME="${2:-drgrpo_qwen3_8b}"
-OUTPUT_DIR="$PROJECT_DIR/outputs/verl_drgrpo"
+CONFIG_NAME="${2:-gspo_qwen3_8b}"
+OUTPUT_DIR="$PROJECT_DIR/outputs/verl_gspo"
 RUN_ID="$(date '+%Y%m%d_%H%M%S')"
 LOG_FILE="$OUTPUT_DIR/train_${RUN_ID}.log"
 

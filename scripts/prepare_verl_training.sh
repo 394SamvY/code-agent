@@ -2,7 +2,7 @@
 # Prepare and launch Agentic GRPO training with verl
 #
 # 用法:
-#   bash scripts/prepare_verl_training.sh                 # 默认 2 GPU + Qwen3-8B Dr.GRPO
+#   bash scripts/prepare_verl_training.sh                 # 默认 2 GPU + Qwen3-8B GSPO
 #   bash scripts/prepare_verl_training.sh 4               # 指定 GPU 数量
 #   bash scripts/prepare_verl_training.sh 2 grpo_qwen_7b  # 指定配置名
 #
@@ -17,7 +17,7 @@ cd "$PROJECT_DIR"
 
 NUM_GPUS=${1:-2}
 CONFIG_PATH="$PROJECT_DIR/configs/verl"
-CONFIG_NAME="${2:-drgrpo_qwen3_8b}"
+CONFIG_NAME="${2:-gspo_qwen3_8b}"
 
 # ─── 环境修正 ──────────────────────────────────────────────────────
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
