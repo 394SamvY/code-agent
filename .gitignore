@@ -32,3 +32,6 @@ outputs/verl_sft/**
 
 # Ignore checkpoints under outputs
 outputs/**/checkpoints/
+
+# Large verl baseline generation dumps
+outputs/verl_baseline_eval/livecodebench_test_grpo_global_step_30_tb256/generations/

@@ -12,7 +12,7 @@ defaults:
 data:
   train_files: ./data/verl/codecontests_valid.parquet
   val_files: ./data/verl/codecontests_valid.parquet
-  train_batch_size: 32
+  train_batch_size: 256
   return_raw_chat: true
   apply_chat_template_kwargs:
     enable_thinking: true
