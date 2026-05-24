@@ -27,6 +27,7 @@ data/verl/codecontests_train.parquet.zip
 
 # SFT outputs — only keep train.log
 outputs/verl_sft/**
+outputs/models/
 !outputs/verl_sft/**/
 !outputs/verl_sft/**/train.log
 
